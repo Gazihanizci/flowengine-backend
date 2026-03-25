@@ -1,7 +1,7 @@
 package com.example.flow.controller;
 
-import com.example.flow.entity.Akis;
-import com.example.flow.repository.AkisRepository;
+import com.example.flow.dto.FlowListResponse;
+import com.example.flow.service.FlowQueryService;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -11,15 +11,18 @@ import java.util.List;
 @CrossOrigin("*")
 public class FlowQueryController {
 
-    private final AkisRepository akisRepository;
+    private final FlowQueryService flowQueryService;
 
-    public FlowQueryController(AkisRepository akisRepository) {
-        this.akisRepository = akisRepository;
+    public FlowQueryController(FlowQueryService flowQueryService) {
+        this.flowQueryService = flowQueryService;
     }
 
-    // 🔥 TÜM FLOWLARI GETİR
+    @GetMapping("/{id}")
+    public Object getFlow(@PathVariable Long id) {
+        return flowQueryService.getFlowFull(id);
+    }
     @GetMapping
-    public List<Akis> getAllFlows() {
-        return akisRepository.findAll();
+    public List<FlowListResponse> getAll() {
+        return flowQueryService.getFlows();
     }
 }

@@ -1,108 +1,83 @@
 package com.example.flow.service;
 
-import com.example.flow.dto.*;
-import com.example.flow.entity.*;
-import com.example.flow.repository.*;
+import com.example.flow.dto.FlowFieldFlatResponse;
+import com.example.flow.dto.FlowListResponse;
+import com.example.flow.repository.AkisRepository;
 import org.springframework.stereotype.Service;
 
-import java.util.List;
-import java.util.stream.Collectors;
+import java.util.*;
 
 @Service
 public class FlowQueryService {
 
     private final AkisRepository akisRepository;
-    private final AkisAdimRepository adimRepository;
-    private final FormRepository formRepository;
-    private final FormBileseniRepository bilesenRepository;
-    private final BilesenSecenegiRepository secenekRepository;
 
-    public FlowQueryService(
-            AkisRepository akisRepository,
-            AkisAdimRepository adimRepository,
-            FormRepository formRepository,
-            FormBileseniRepository bilesenRepository,
-            BilesenSecenegiRepository secenekRepository
-    ) {
+    public FlowQueryService(AkisRepository akisRepository) {
         this.akisRepository = akisRepository;
-        this.adimRepository = adimRepository;
-        this.formRepository = formRepository;
-        this.bilesenRepository = bilesenRepository;
-        this.secenekRepository = secenekRepository;
+    }
+    public List<FlowListResponse> getFlows() {
+        return akisRepository.getAllFlows();
     }
 
-    public FlowDetailResponse getFlowDetail(Long flowId) {
+    public Map<String, Object> getFlowFull(Long flowId) {
 
-        Akis akis = akisRepository.findById(flowId)
-                .orElseThrow();
+        List<FlowFieldFlatResponse> rows =
+                akisRepository.getFlowFields(flowId);
 
-        FlowDetailResponse response = new FlowDetailResponse();
-        response.setFlowId(akis.getAkisId());
-        response.setFlowName(akis.getAkisAdi());
-        response.setAciklama(akis.getAciklama());
+        Map<Long, Map<String, Object>> stepMap = new LinkedHashMap<>();
 
-        List<AkisAdim> adimlar =
-                adimRepository.findByAkis_AkisIdOrderByAdimSirasi(flowId);
+        for (FlowFieldFlatResponse row : rows) {
 
-        List<StepDetailResponse> steps = adimlar.stream().map(adim -> {
+            stepMap.putIfAbsent(row.getAdimId(), new LinkedHashMap<>());
 
-            StepDetailResponse step = new StepDetailResponse();
-            step.setStepId(adim.getAdimId());
-            step.setStepName(adim.getAdimAdi());
-            step.setStepOrder(adim.getAdimSirasi());
+            Map<String, Object> step = stepMap.get(row.getAdimId());
 
-            Form form = formRepository
-                    .findAll()
-                    .stream()
-                    .filter(f -> f.getAdim().getAdimId().equals(adim.getAdimId()))
+            step.putIfAbsent("stepId", row.getAdimId());
+            step.putIfAbsent("stepName", row.getAdimAdi());
+            step.putIfAbsent("fields", new ArrayList<>());
+
+            List<Map<String, Object>> fields =
+                    (List<Map<String, Object>>) step.get("fields");
+
+            Map<String, Object> field = fields.stream()
+                    .filter(f -> f.get("fieldId").equals(row.getBilesenId()))
                     .findFirst()
                     .orElse(null);
 
-            if (form == null) return step;
+            if (field == null) {
+                field = new LinkedHashMap<>();
+                field.put("fieldId", row.getBilesenId());
+                field.put("type", row.getBilesenTipi());
+                field.put("label", row.getLabel());
+                field.put("placeholder", row.getPlaceholder());
+                field.put("required", row.getZorunlu());
+                field.put("orderNo", row.getSiraNo());
+                field.put("options", new ArrayList<>());
 
-            List<FormBileseni> bilesenler =
-                    bilesenRepository.findAll()
-                            .stream()
-                            .filter(b -> b.getForm().getFormId().equals(form.getFormId()))
-                            .toList();
+                fields.add(field);
+            }
 
-            List<FieldDetailResponse> fields = bilesenler.stream().map(b -> {
+            if (row.getOptionLabel() != null) {
+                List<Map<String, String>> options =
+                        (List<Map<String, String>>) field.get("options");
 
-                FieldDetailResponse field = new FieldDetailResponse();
-                field.setFieldId(b.getBilesenId());
-                field.setType(b.getBilesenTipi());
-                field.setLabel(b.getLabel());
-                field.setPlaceholder(b.getPlaceholder());
-                field.setRequired(b.getZorunlu());
-                field.setOrderNo(b.getSiraNo());
+                Map<String, String> opt = new HashMap<>();
+                opt.put("label", row.getOptionLabel());
+                opt.put("value", row.getOptionValue());
 
-                if ("COMBOBOX".equalsIgnoreCase(b.getBilesenTipi())) {
+                options.add(opt);
+            }
+        }
 
-                    List<OptionDetailResponse> options =
-                            secenekRepository.findAll()
-                                    .stream()
-                                    .filter(s -> s.getBilesen().getBilesenId().equals(b.getBilesenId()))
-                                    .map(s -> {
-                                        OptionDetailResponse o = new OptionDetailResponse();
-                                        o.setLabel(s.getEtiket());
-                                        o.setValue(s.getDeger());
-                                        return o;
-                                    }).toList();
+        Map<String, Object> response = new LinkedHashMap<>();
 
-                    field.setOptions(options);
-                }
+        if (!rows.isEmpty()) {
+            response.put("flowId", rows.get(0).getAkisId());
+            response.put("flowName", rows.get(0).getAkisAdi());
+            response.put("aciklama", rows.get(0).getAciklama());
+        }
 
-                return field;
-
-            }).collect(Collectors.toList());
-
-            step.setFields(fields);
-
-            return step;
-
-        }).toList();
-
-        response.setSteps(steps);
+        response.put("steps", new ArrayList<>(stepMap.values()));
 
         return response;
     }

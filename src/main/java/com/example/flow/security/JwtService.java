@@ -3,9 +3,10 @@ package com.example.flow.security;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
-import javax.crypto.SecretKey;
+import jakarta.annotation.PostConstruct;
 import org.springframework.stereotype.Service;
 
+import javax.crypto.SecretKey;
 import java.util.Date;
 
 @Service
@@ -14,8 +15,11 @@ public class JwtService {
     private final String SECRET = "12345678901234567890123456789012";
     private final long EXPIRATION = 1000 * 60 * 60 * 24;
 
-    private SecretKey getKey() {
-        return Keys.hmacShaKeyFor(SECRET.getBytes());
+    private SecretKey key;
+
+    @PostConstruct
+    public void init() {
+        key = Keys.hmacShaKeyFor(SECRET.getBytes());
     }
 
     public String generateToken(Long userId, String email) {
@@ -24,19 +28,19 @@ public class JwtService {
                 .claim("userId", userId)
                 .issuedAt(new Date())
                 .expiration(new Date(System.currentTimeMillis() + EXPIRATION))
-                .signWith(getKey())
+                .signWith(key)
                 .compact();
     }
 
-    public Claims parseToken(String token) {
+    public Claims parse(String token) {
         return Jwts.parser()
-                .verifyWith(getKey())   // ✅ burada çalışır
+                .verifyWith(key)
                 .build()
                 .parseSignedClaims(token)
                 .getPayload();
     }
 
     public Long getUserId(String token) {
-        return parseToken(token).get("userId", Long.class);
+        return parse(token).get("userId", Long.class);
     }
 }

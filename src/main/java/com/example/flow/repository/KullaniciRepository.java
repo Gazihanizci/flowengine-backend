@@ -11,14 +11,15 @@ import java.util.Optional;
 public interface KullaniciRepository extends JpaRepository<Kullanici, Long> {
 
     @Query(value = """
-        SELECT 
-            k.ad_soyad AS adSoyad,
-            r.rol_adi AS rolAdi
-        FROM kullanicilar k
-        JOIN kullanici_rolleri kr ON k.kullanici_id = kr.kullanici_id
-        JOIN roller r ON kr.rol_id = r.rol_id
-        WHERE k.kullanici_id = :kullaniciId
-        """, nativeQuery = true)
+    SELECT 
+        k.ad_soyad AS adSoyad,
+        r.rol_adi AS rolAdi,
+        r.rol_id AS rolId
+    FROM kullanicilar k
+    JOIN kullanici_rolleri kr ON k.kullanici_id = kr.kullanici_id
+    JOIN roller r ON kr.rol_id = r.rol_id
+    WHERE k.kullanici_id = :kullaniciId
+    """, nativeQuery = true)
     List<KullaniciMeResponse> findMyRoles(@Param("kullaniciId") Long kullaniciId);
 
     Optional<Kullanici> findByEmail(String email);

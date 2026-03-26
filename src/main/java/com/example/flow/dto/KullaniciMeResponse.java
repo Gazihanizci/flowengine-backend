@@ -4,4 +4,5 @@ public interface KullaniciMeResponse {
 
     String getAdSoyad();
     String getRolAdi();
+    Long getRolId();
 }

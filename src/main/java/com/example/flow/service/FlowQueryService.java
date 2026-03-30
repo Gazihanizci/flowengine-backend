@@ -2,7 +2,9 @@ package com.example.flow.service;
 
 import com.example.flow.dto.FlowFieldFlatResponse;
 import com.example.flow.dto.FlowListResponse;
+import com.example.flow.entity.FormBileseniAtama;
 import com.example.flow.repository.AkisRepository;
+import com.example.flow.repository.FormBileseniAtamaRepository;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -11,10 +13,14 @@ import java.util.*;
 public class FlowQueryService {
 
     private final AkisRepository akisRepository;
+    private final FormBileseniAtamaRepository atamaRepository; // 🔥 EKLENDİ
 
-    public FlowQueryService(AkisRepository akisRepository) {
+    public FlowQueryService(AkisRepository akisRepository,
+                            FormBileseniAtamaRepository atamaRepository) {
         this.akisRepository = akisRepository;
+        this.atamaRepository = atamaRepository;
     }
+
     public List<FlowListResponse> getFlows() {
         return akisRepository.getAllFlows();
     }
@@ -45,6 +51,23 @@ public class FlowQueryService {
                     .orElse(null);
 
             if (field == null) {
+
+                // 🔥 ATAMA ÇEK
+                List<FormBileseniAtama> atamalar =
+                        atamaRepository.findByBilesenId(row.getBilesenId());
+
+                List<Long> userIds = new ArrayList<>();
+                List<Long> roleIds = new ArrayList<>();
+
+                for (FormBileseniAtama a : atamalar) {
+                    if ("USER".equals(a.getTip())) {
+                        userIds.add(a.getRefId());
+                    }
+                    if ("ROLE".equals(a.getTip())) {
+                        roleIds.add(a.getRefId());
+                    }
+                }
+
                 field = new LinkedHashMap<>();
                 field.put("fieldId", row.getBilesenId());
                 field.put("type", row.getBilesenTipi());
@@ -53,6 +76,10 @@ public class FlowQueryService {
                 field.put("required", row.getZorunlu());
                 field.put("orderNo", row.getSiraNo());
                 field.put("options", new ArrayList<>());
+
+                // 🔥 YENİ EKLENENLER
+                field.put("userIds", userIds);
+                field.put("roleIds", roleIds);
 
                 fields.add(field);
             }

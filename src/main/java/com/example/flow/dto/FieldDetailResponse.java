@@ -15,5 +15,10 @@ public class FieldDetailResponse {
     private String placeholder;
     private Boolean required;
     private Integer orderNo;
+
     private List<OptionDetailResponse> options;
+
+    // 🔥 YENİ
+    private List<Long> userIds;
+    private List<Long> roleIds;
 }

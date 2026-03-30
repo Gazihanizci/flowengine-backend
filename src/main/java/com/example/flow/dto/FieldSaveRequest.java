@@ -23,6 +23,10 @@ public class FieldSaveRequest {
 
     private Integer orderNo;
 
+    // 🔥 YENİ (çoklu destek)
+    private List<Long> roleIds;
+    private List<Long> userIds;
+
     @Valid
     private List<OptionSaveRequest> options;
 }

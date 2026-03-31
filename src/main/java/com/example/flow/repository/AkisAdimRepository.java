@@ -10,4 +10,8 @@ public interface AkisAdimRepository extends JpaRepository<AkisAdim, Long> {
 
     List<AkisAdim> findByAkis_AkisIdOrderByAdimSirasi(Long akisId);
     Optional<AkisAdim> findFirstByAkis_AkisIdOrderByAdimSirasiAsc(Long akisId);
+    Optional<AkisAdim> findFirstByAkis_AkisIdAndAdimSirasiGreaterThanOrderByAdimSirasiAsc(
+            Long akisId,
+            Integer adimSirasi
+    );
 }

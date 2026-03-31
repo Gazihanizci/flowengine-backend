@@ -1,0 +1,19 @@
+package com.example.flow.dto;
+
+import lombok.Getter;
+import lombok.Setter;
+
+import java.util.List;
+
+@Getter
+@Setter
+public class FieldResponse {
+
+    private Long fieldId;
+    private String type;
+    private String label;
+
+    private boolean editable;
+
+    private List<OptionResponse> options;
+}

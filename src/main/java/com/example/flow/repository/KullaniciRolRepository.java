@@ -22,5 +22,7 @@ public interface KullaniciRolRepository extends JpaRepository<KullaniciRol, Long
     """, nativeQuery = true)
     List<Object[]> findAllUsersWithRoles();
     List<KullaniciRol> findByRolId(Long rolId);
+    List<KullaniciRol> findByKullaniciId(Long kullaniciId);
+
 
 }

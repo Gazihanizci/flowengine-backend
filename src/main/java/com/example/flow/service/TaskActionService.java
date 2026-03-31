@@ -26,24 +26,20 @@ public class TaskActionService {
     private final KullaniciRolRepository kullaniciRolRepository;
 
     @Transactional
-    public void handleAction(Long taskId,
-                             Long aksiyonId,
-                             Map<Long, String> formData) {
+    public void handleAction(Long taskId, Long aksiyonId, Map<Long, String> formData) {
 
-        // 1️⃣ TASK BUL
-        SurecAdim task = surecAdimRepository.findById(taskId)
-                .orElseThrow();
+        // 1️⃣ MEVCUT TASK'I BUL VE KULLANICIYI AL
+        SurecAdim currentTask = surecAdimRepository.findById(taskId)
+                .orElseThrow(() -> new RuntimeException("Task bulunamadı: " + taskId));
 
-        Long userId = task.getAtananKullaniciId();
+        Long userId = currentTask.getAtananKullaniciId();
 
-        // 2️⃣ FORM VERİLERİNİ KAYDET (🔥 YETKİ KONTROLLÜ)
+        // 2️⃣ FORM VERİLERİNİ DOĞRULA VE KAYDET
         for (Map.Entry<Long, String> entry : formData.entrySet()) {
-
-            // 🔥 YETKİ KONTROLÜ
             fieldPermissionService.validate(userId, entry.getKey());
 
             FormVeri fv = new FormVeri();
-            fv.setSurecId(task.getSurecId());
+            fv.setSurecId(currentTask.getSurecId());
             fv.setBilesenId(entry.getKey());
             fv.setDeger(entry.getValue());
             fv.setKaydedenKullaniciId(userId);
@@ -52,137 +48,116 @@ public class TaskActionService {
             formVeriRepository.save(fv);
         }
 
-        // 3️⃣ TASK TAMAMLA
-        task.setDurum("TAMAMLANDI");
-        task.setTamamlandiMi(true);
+        // 3️⃣ MEVCUT TASK'I TAMAMLA
+        currentTask.setDurum("TAMAMLANDI");
+        currentTask.setTamamlandiMi(true);
+        currentTask.setBitisTarihi(LocalDateTime.now()); // Opsiyonel: Bitiş tarihi eklemek iyidir
+        surecAdimRepository.save(currentTask);
 
-        // 🔥 PARALLEL TASKLARI İPTAL
-        cancelOtherTasks(task);
+        // 4️⃣ PARALEL ONAY KONTROLÜ
+        // Bu adımda birden fazla kişiye task atanmış olabilir. Hepsinin bitmesi beklenir.
+        long tamamlananSayisi = surecAdimRepository.countBySurecIdAndAdimIdAndDurum(
+                currentTask.getSurecId(),
+                currentTask.getAdimId(),
+                "TAMAMLANDI"
+        );
 
-        // 4️⃣ SÜREÇ BUL
-        AkisSurec surec = surecRepository
-                .findById(task.getSurecId())
-                .orElseThrow();
+        long toplamTaskSayisi = surecAdimRepository.findBySurecIdAndAdimId(
+                currentTask.getSurecId(),
+                currentTask.getAdimId()
+        ).size();
 
+        // Eğer henüz herkes tamamlamadıysa metodu burada bitir, sonraki adıma geçme
+        if (tamamlananSayisi < toplamTaskSayisi) {
+            return;
+        }
+
+        // 5️⃣ AKIŞ ADIMI VE SÜREÇ BİLGİLERİNİ GETİR
+        AkisAdim step = akisAdimRepository.findById(currentTask.getAdimId())
+                .orElseThrow(() -> new RuntimeException("Akış adımı bulunamadı"));
+
+        AkisSurec surec = surecRepository.findById(currentTask.getSurecId())
+                .orElseThrow(() -> new RuntimeException("Süreç bulunamadı"));
+
+        // 6️⃣ SONRAKI ADIMI BELİRLE (KURAL VEYA VARSAYILAN MANTIK)
         Long nextStepId = null;
 
-        // 5️⃣ DB KURAL VAR MI?
-        List<AdimGecisKural> rules =
-                gecisRepository.findByAdimIdAndAksiyonId(
-                        task.getAdimId(),
-                        aksiyonId
-                );
+        // DB'deki Özel Geçiş Kuralları (Örn: Redde basınca 5. adıma git gibi)
+        List<AdimGecisKural> rules = gecisRepository.findByAdimIdAndAksiyonId(
+                currentTask.getAdimId(),
+                aksiyonId
+        );
 
         if (!rules.isEmpty()) {
             nextStepId = rules.get(0).getSonrakiAdimId();
         }
 
-        // 6️⃣ DEFAULT LOGIC (DB yoksa)
+        // Eğer kural yoksa varsayılan logic (1=Onay, 2=Red)
         if (nextStepId == null) {
-
-            AkisAdim currentStep = akisAdimRepository
-                    .findById(task.getAdimId())
-                    .orElseThrow();
-
-            Integer sirasi = currentStep.getAdimSirasi();
-
-            // ✅ ONAY → sonraki step
-            if (aksiyonId == 1) {
-
-                AkisAdim nextStep = akisAdimRepository
+            if (aksiyonId == 1) { // ONAY
+                Optional<AkisAdim> nextStepOpt = akisAdimRepository
                         .findFirstByAkis_AkisIdAndAdimSirasiGreaterThanOrderByAdimSirasiAsc(
                                 surec.getAkisId(),
-                                sirasi
-                        )
-                        .orElse(null);
+                                step.getAdimSirasi()
+                        );
 
-                if (nextStep == null) {
+                if (nextStepOpt.isEmpty()) {
                     surec.setDurum("TAMAMLANDI");
+                    surecRepository.save(surec);
                     return;
                 }
-
-                nextStepId = nextStep.getAdimId();
-            }
-
-            // ❌ RED → süreci bitir
-            else if (aksiyonId == 2) {
+                nextStepId = nextStepOpt.get().getAdimId();
+            } else if (aksiyonId == 2) { // RED
                 surec.setDurum("REDDEDILDI");
+                surecRepository.save(surec);
                 return;
             }
         }
 
-        // 7️⃣ SÜRECİ GÜNCELLE
-        surec.setMevcutAdimId(nextStepId);
-
-        // 8️⃣ YENİ TASK OLUŞTUR
-        createTasksForStep(surec.getSurecId(), nextStepId);
-    }
-
-    // 🔥 PARALLEL TASK İPTAL
-    private void cancelOtherTasks(SurecAdim currentTask) {
-
-        List<SurecAdim> tasks =
-                surecAdimRepository
-                        .findBySurecIdAndAdimId(
-                                currentTask.getSurecId(),
-                                currentTask.getAdimId()
-                        );
-
-        for (SurecAdim t : tasks) {
-            if (!t.getId().equals(currentTask.getId())
-                    && "BEKLIYOR".equals(t.getDurum())) {
-
-                t.setDurum("IPTAL");
-                t.setTamamlandiMi(false);
-            }
+        // 7️⃣ SÜRECİ GÜNCELLE VE YENİ TASKLARI OLUŞTUR
+        if (nextStepId != null) {
+            surec.setMevcutAdimId(nextStepId);
+            surecRepository.save(surec);
+            createTasksForStep(surec.getSurecId(), nextStepId);
         }
     }
 
-    // 🔥 YENİ STEP TASK OLUŞTUR
     private void createTasksForStep(Long surecId, Long adimId) {
-
         Form form = formRepository.findByAdimId(adimId)
-                .orElseThrow();
+                .orElseThrow(() -> new RuntimeException("Bu adım için form tanımlanmamış: " + adimId));
 
-        List<FormBileseni> bilesenler =
-                formBilesenRepository.findByForm_FormId(form.getFormId());
-
-        Set<Long> kullanicilar = new HashSet<>();
+        List<FormBileseni> bilesenler = formBilesenRepository.findByForm_FormId(form.getFormId());
+        Set<Long> atanacakKullanicilar = new HashSet<>();
 
         for (FormBileseni b : bilesenler) {
-
-            List<FormBileseniAtama> atamalar =
-                    atamaRepository.findByBilesenId(b.getBilesenId());
+            List<FormBileseniAtama> atamalar = atamaRepository.findByBilesenId(b.getBilesenId());
 
             for (FormBileseniAtama a : atamalar) {
-
                 if ("USER".equals(a.getTip())) {
-                    kullanicilar.add(a.getRefId());
-                }
-
-                if ("ROLE".equals(a.getTip())) {
-
-                    List<KullaniciRol> roller =
-                            kullaniciRolRepository.findByRolId(a.getRefId());
-
+                    atanacakKullanicilar.add(a.getRefId());
+                } else if ("ROLE".equals(a.getTip())) {
+                    List<KullaniciRol> roller = kullaniciRolRepository.findByRolId(a.getRefId());
                     for (KullaniciRol kr : roller) {
-                        kullanicilar.add(kr.getKullaniciId());
+                        atanacakKullanicilar.add(kr.getKullaniciId());
                     }
                 }
             }
         }
 
-        for (Long kId : kullanicilar) {
+        // Eğer hiç kullanıcı bulunamadıysa (Sistem hatası veya eksik tanım)
+        if (atanacakKullanicilar.isEmpty()) {
+            throw new RuntimeException("Yeni adım için atanacak kullanıcı bulunamadı!");
+        }
 
-            SurecAdim task = new SurecAdim();
-            task.setSurecId(surecId);
-            task.setAdimId(adimId);
-            task.setAtananKullaniciId(kId);
-            task.setDurum("BEKLIYOR");
-            task.setTamamlandiMi(false);
-            task.setBaslamaTarihi(LocalDateTime.now());
-
-            surecAdimRepository.save(task);
+        for (Long kId : atanacakKullanicilar) {
+            SurecAdim newTask = new SurecAdim();
+            newTask.setSurecId(surecId);
+            newTask.setAdimId(adimId);
+            newTask.setAtananKullaniciId(kId);
+            newTask.setDurum("BEKLIYOR");
+            newTask.setTamamlandiMi(false);
+            newTask.setBaslamaTarihi(LocalDateTime.now());
+            surecAdimRepository.save(newTask);
         }
     }
 }

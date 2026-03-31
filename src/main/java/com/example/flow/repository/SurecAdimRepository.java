@@ -11,4 +11,9 @@ public interface SurecAdimRepository
     List<SurecAdim>
     findBySurecIdAndAdimId(Long surecId, Long adimId);
     List<SurecAdim> findByAtananKullaniciIdAndDurum(Long userId, String durum);
+    long countBySurecIdAndAdimIdAndDurum(
+            Long surecId,
+            Long adimId,
+            String durum
+    );
 }

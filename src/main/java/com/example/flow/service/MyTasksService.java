@@ -12,6 +12,7 @@ import java.util.*;
 @RequiredArgsConstructor
 public class MyTasksService {
 
+    private final FormVeriRepository formVeriRepository;
     private final SurecAdimRepository surecAdimRepository;
     private final AkisAdimRepository akisAdimRepository;
     private final FormRepository formRepository;
@@ -42,7 +43,7 @@ public class MyTasksService {
 
             tr.setAdimAdi(step.getAdimAdi());
 
-            // FORM
+            // 🔥 FORM
             Form form = formRepository
                     .findByAdimId(task.getAdimId())
                     .orElse(null);
@@ -51,10 +52,41 @@ public class MyTasksService {
 
             if (form != null) {
 
+                // 🔥 TÜM BİLEŞENLER
                 List<FormBileseni> bilesenler =
                         formBilesenRepository
                                 .findByForm_FormId(form.getFormId());
 
+                // 🔥 VERİLER (Sadece bu süreç)
+                List<FormVeri> veriler =
+                        formVeriRepository.findBySurecId(task.getSurecId());
+
+                // 🔥 PERFORMANCE: MAP
+                Map<Long, String> veriMap = new HashMap<>();
+                for (FormVeri v : veriler) {
+                    veriMap.put(v.getBilesenId(), v.getDeger());
+                }
+
+                // 🔥 OPTIONS TEK SEFERDE ÇEK
+                List<BilesenSecenegi> tumSecenekler =
+                        bilesenSecenegiRepository.findAll();
+
+                Map<Long, List<OptionResponse>> optionMap = new HashMap<>();
+
+                for (BilesenSecenegi s : tumSecenekler) {
+
+                    Long bilesenId = s.getBilesen().getBilesenId();
+
+                    optionMap.putIfAbsent(bilesenId, new ArrayList<>());
+
+                    OptionResponse op = new OptionResponse();
+                    op.setLabel(s.getEtiket());
+                    op.setValue(s.getDeger());
+
+                    optionMap.get(bilesenId).add(op);
+                }
+
+                // 🔥 FIELD LOOP
                 for (FormBileseni b : bilesenler) {
 
                     FieldResponse fr = new FieldResponse();
@@ -63,29 +95,19 @@ public class MyTasksService {
                     fr.setType(b.getBilesenTipi());
                     fr.setLabel(b.getLabel());
 
+                    // 🔥 VALUE (DB’den gelen)
+                    fr.setValue(veriMap.get(b.getBilesenId()));
+
                     // 🔥 YETKİ
                     fr.setEditable(checkPermission(userId, b.getBilesenId()));
 
-                    // 🔥 OPTIONS (MANUEL FİLTRE)
-                    List<BilesenSecenegi> tumSecenekler =
-                            bilesenSecenegiRepository.findAll();
-
-                    List<OptionResponse> options = new ArrayList<>();
-
-                    for (BilesenSecenegi s : tumSecenekler) {
-
-                        if (s.getBilesen().getBilesenId()
-                                .equals(b.getBilesenId())) {
-
-                            OptionResponse op = new OptionResponse();
-                            op.setLabel(s.getEtiket());
-                            op.setValue(s.getDeger());
-
-                            options.add(op);
-                        }
-                    }
-
-                    fr.setOptions(options);
+                    // 🔥 OPTIONS
+                    fr.setOptions(
+                            optionMap.getOrDefault(
+                                    b.getBilesenId(),
+                                    new ArrayList<>()
+                            )
+                    );
 
                     fields.add(fr);
                 }

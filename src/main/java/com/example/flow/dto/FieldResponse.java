@@ -14,6 +14,6 @@ public class FieldResponse {
     private String label;
 
     private boolean editable;
-
+    private String value;
     private List<OptionResponse> options;
 }

@@ -19,102 +19,169 @@ public class TaskActionService {
     private final FormVeriRepository formVeriRepository;
     private final AkisAdimRepository akisAdimRepository;
     private final FieldPermissionService fieldPermissionService;
-
     private final FormRepository formRepository;
     private final FormBileseniRepository formBilesenRepository;
     private final FormBileseniAtamaRepository atamaRepository;
     private final KullaniciRolRepository kullaniciRolRepository;
+    private final SurecEventiRepository surecEventiRepository;
 
     @Transactional
     public void handleAction(Long taskId, Long aksiyonId, Map<Long, String> formData) {
 
-        // 1️⃣ MEVCUT TASK'I BUL VE KULLANICIYI AL
+        if (aksiyonId == null || (aksiyonId != 1 && aksiyonId != 2)) {
+            throw new RuntimeException("Geçersiz aksiyon");
+        }
+
         SurecAdim currentTask = surecAdimRepository.findById(taskId)
                 .orElseThrow(() -> new RuntimeException("Task bulunamadı: " + taskId));
 
         Long userId = currentTask.getAtananKullaniciId();
 
-        // 2️⃣ FORM VERİLERİNİ DOĞRULA VE KAYDET
-        for (Map.Entry<Long, String> entry : formData.entrySet()) {
-            fieldPermissionService.validate(userId, entry.getKey());
+        Form form = formRepository
+                .findByAdimId(currentTask.getAdimId())
+                .orElse(null);
 
-            FormVeri fv = new FormVeri();
-            fv.setSurecId(currentTask.getSurecId());
-            fv.setBilesenId(entry.getKey());
-            fv.setDeger(entry.getValue());
-            fv.setKaydedenKullaniciId(userId);
-            fv.setKayitTarihi(LocalDateTime.now());
+        if (form != null) {
+            List<FormBileseni> bilesenler =
+                    formBilesenRepository.findByForm_FormId(form.getFormId());
 
-            formVeriRepository.save(fv);
+            for (FormBileseni b : bilesenler) {
+                if (Boolean.TRUE.equals(b.getZorunlu())) {
+                    if (formData == null || !formData.containsKey(b.getBilesenId())) {
+                        throw new RuntimeException("Zorunlu alan boş: " + b.getLabel());
+                    }
+                }
+            }
         }
 
-        // 3️⃣ MEVCUT TASK'I TAMAMLA
+        if (formData != null) {
+            for (Map.Entry<Long, String> entry : formData.entrySet()) {
+
+                fieldPermissionService.validate(userId, entry.getKey());
+
+                Optional<FormVeri> existing =
+                        formVeriRepository.findBySurecIdAndBilesenId(
+                                currentTask.getSurecId(),
+                                entry.getKey()
+                        );
+
+                FormVeri fv;
+                if (existing.isPresent()) {
+                    fv = existing.get();
+                    fv.setDeger(entry.getValue());
+                } else {
+                    fv = new FormVeri();
+                    fv.setSurecId(currentTask.getSurecId());
+                    fv.setBilesenId(entry.getKey());
+                    fv.setDeger(entry.getValue());
+                }
+
+                fv.setKaydedenKullaniciId(userId);
+                fv.setKayitTarihi(LocalDateTime.now());
+                formVeriRepository.save(fv);
+            }
+        }
+
         currentTask.setDurum("TAMAMLANDI");
         currentTask.setTamamlandiMi(true);
-        currentTask.setBitisTarihi(LocalDateTime.now()); // Opsiyonel: Bitiş tarihi eklemek iyidir
+        currentTask.setBitisTarihi(LocalDateTime.now());
         surecAdimRepository.save(currentTask);
 
-        // 4️⃣ PARALEL ONAY KONTROLÜ
-        // Bu adımda birden fazla kişiye task atanmış olabilir. Hepsinin bitmesi beklenir.
-        long tamamlananSayisi = surecAdimRepository.countBySurecIdAndAdimIdAndDurum(
+        long tamamlanan = surecAdimRepository.countBySurecIdAndAdimIdAndDurum(
                 currentTask.getSurecId(),
                 currentTask.getAdimId(),
                 "TAMAMLANDI"
         );
 
-        long toplamTaskSayisi = surecAdimRepository.findBySurecIdAndAdimId(
+        long toplam = surecAdimRepository.findBySurecIdAndAdimId(
                 currentTask.getSurecId(),
                 currentTask.getAdimId()
         ).size();
 
-        // Eğer henüz herkes tamamlamadıysa metodu burada bitir, sonraki adıma geçme
-        if (tamamlananSayisi < toplamTaskSayisi) {
+        if (tamamlanan < toplam) {
             return;
         }
 
-        // 5️⃣ AKIŞ ADIMI VE SÜREÇ BİLGİLERİNİ GETİR
         AkisAdim step = akisAdimRepository.findById(currentTask.getAdimId())
-                .orElseThrow(() -> new RuntimeException("Akış adımı bulunamadı"));
+                .orElseThrow(() -> new RuntimeException("Adım bulunamadı"));
 
         AkisSurec surec = surecRepository.findById(currentTask.getSurecId())
                 .orElseThrow(() -> new RuntimeException("Süreç bulunamadı"));
 
-        // 6️⃣ SONRAKI ADIMI BELİRLE (KURAL VEYA VARSAYILAN MANTIK)
+        // DIŞ AKIŞ BAŞLATMA
+        if (Boolean.TRUE.equals(step.getExternalFlowEnabled())
+                && step.getExternalFlowId() != null) {
+
+            surec.setDurum("WAITING_EXTERNAL");
+            surec.setMevcutAdimId(step.getAdimId());
+            surecRepository.save(surec);
+
+            AkisSurec child = new AkisSurec();
+            child.setAkisId(step.getExternalFlowId());
+            child.setBaslatanKullaniciId(surec.getBaslatanKullaniciId());
+            child.setMevcutAdimId(null);
+            child.setDurum("RUNNING");
+            child.setBaslamaTarihi(LocalDateTime.now());
+            child.setParentSurecId(surec.getSurecId());
+            child.setParentAdimId(step.getAdimId());
+            child.setResumeAdimSirasi(step.getAdimSirasi() + 1);
+
+            surecRepository.save(child);
+
+            AkisAdim firstChildStep = akisAdimRepository
+                    .findFirstByAkis_AkisIdOrderByAdimSirasiAsc(step.getExternalFlowId())
+                    .orElseThrow(() -> new RuntimeException("Child flow ilk adımı bulunamadı"));
+
+            child.setMevcutAdimId(firstChildStep.getAdimId());
+            surecRepository.save(child);
+
+            createTasksForStep(child.getSurecId(), firstChildStep.getAdimId());
+            return;
+        }
+
         Long nextStepId = null;
 
-        // DB'deki Özel Geçiş Kuralları (Örn: Redde basınca 5. adıma git gibi)
-        List<AdimGecisKural> rules = gecisRepository.findByAdimIdAndAksiyonId(
-                currentTask.getAdimId(),
-                aksiyonId
-        );
+        List<AdimGecisKural> rules =
+                gecisRepository.findByAdimIdAndAksiyonId(
+                        currentTask.getAdimId(),
+                        aksiyonId
+                );
 
         if (!rules.isEmpty()) {
             nextStepId = rules.get(0).getSonrakiAdimId();
         }
 
-        // Eğer kural yoksa varsayılan logic (1=Onay, 2=Red)
         if (nextStepId == null) {
-            if (aksiyonId == 1) { // ONAY
-                Optional<AkisAdim> nextStepOpt = akisAdimRepository
-                        .findFirstByAkis_AkisIdAndAdimSirasiGreaterThanOrderByAdimSirasiAsc(
-                                surec.getAkisId(),
-                                step.getAdimSirasi()
-                        );
+            if (aksiyonId == 1) {
+                Optional<AkisAdim> next =
+                        akisAdimRepository
+                                .findFirstByAkis_AkisIdAndAdimSirasiGreaterThanOrderByAdimSirasiAsc(
+                                        surec.getAkisId(),
+                                        step.getAdimSirasi()
+                                );
 
-                if (nextStepOpt.isEmpty()) {
+                if (next.isEmpty()) {
                     surec.setDurum("TAMAMLANDI");
+                    surec.setBitisTarihi(LocalDateTime.now());
                     surecRepository.save(surec);
+
+                    // child ise parent'ı resume et
+                    resumeParentIfNeeded(surec);
                     return;
                 }
-                nextStepId = nextStepOpt.get().getAdimId();
-            } else if (aksiyonId == 2) { // RED
+
+                nextStepId = next.get().getAdimId();
+            } else if (aksiyonId == 2) {
                 surec.setDurum("REDDEDILDI");
+                surec.setBitisTarihi(LocalDateTime.now());
                 surecRepository.save(surec);
+
+                // child red olursa parent davranışı
+                handleChildRejectedIfNeeded(surec);
                 return;
             }
         }
 
-        // 7️⃣ SÜRECİ GÜNCELLE VE YENİ TASKLARI OLUŞTUR
         if (nextStepId != null) {
             surec.setMevcutAdimId(nextStepId);
             surecRepository.save(surec);
@@ -122,42 +189,116 @@ public class TaskActionService {
         }
     }
 
-    private void createTasksForStep(Long surecId, Long adimId) {
-        Form form = formRepository.findByAdimId(adimId)
-                .orElseThrow(() -> new RuntimeException("Bu adım için form tanımlanmamış: " + adimId));
+    @Transactional
+    public void resumeParentIfNeeded(AkisSurec childSurec) {
 
-        List<FormBileseni> bilesenler = formBilesenRepository.findByForm_FormId(form.getFormId());
-        Set<Long> atanacakKullanicilar = new HashSet<>();
+        if (childSurec.getParentSurecId() == null) {
+            return;
+        }
+
+        String correlationId = "CHILD_COMPLETED_" + childSurec.getSurecId();
+
+        if (surecEventiRepository.existsByCorrelationId(correlationId)) {
+            return;
+        }
+
+        SurecEventi event = new SurecEventi();
+        event.setSurecId(childSurec.getSurecId());
+        event.setEventType("CHILD_COMPLETED");
+        event.setCorrelationId(correlationId);
+        event.setProcessedAt(LocalDateTime.now());
+        surecEventiRepository.save(event);
+
+        AkisSurec parent = surecRepository.findById(childSurec.getParentSurecId())
+                .orElseThrow(() -> new RuntimeException("Parent süreç bulunamadı"));
+
+        parent.setDurum("RUNNING");
+
+        Optional<AkisAdim> next = akisAdimRepository
+                .findFirstByAkis_AkisIdAndAdimSirasiGreaterThanOrderByAdimSirasiAsc(
+                        parent.getAkisId(),
+                        childSurec.getResumeAdimSirasi() - 1
+                );
+
+        if (next.isEmpty()) {
+            parent.setDurum("TAMAMLANDI");
+            parent.setBitisTarihi(LocalDateTime.now());
+            surecRepository.save(parent);
+            return;
+        }
+
+        parent.setMevcutAdimId(next.get().getAdimId());
+        surecRepository.save(parent);
+
+        createTasksForStep(parent.getSurecId(), next.get().getAdimId());
+    }
+
+    @Transactional
+    public void handleChildRejectedIfNeeded(AkisSurec childSurec) {
+
+        if (childSurec.getParentSurecId() == null) {
+            return;
+        }
+
+        AkisSurec parent = surecRepository.findById(childSurec.getParentSurecId())
+                .orElseThrow(() -> new RuntimeException("Parent süreç bulunamadı"));
+
+        AkisAdim parentStep = akisAdimRepository.findById(childSurec.getParentAdimId())
+                .orElseThrow(() -> new RuntimeException("Parent step bulunamadı"));
+
+        String davranis = parentStep.getCancelBehavior();
+
+        if (davranis == null || "PROPAGATE".equalsIgnoreCase(davranis)) {
+            parent.setDurum("REDDEDILDI");
+            parent.setBitisTarihi(LocalDateTime.now());
+            surecRepository.save(parent);
+        } else if ("KEEP_WAITING".equalsIgnoreCase(davranis)) {
+            parent.setDurum("WAITING_EXTERNAL");
+            surecRepository.save(parent);
+        }
+    }
+
+    private void createTasksForStep(Long surecId, Long adimId) {
+
+        Form form = formRepository.findByAdimId(adimId)
+                .orElseThrow(() -> new RuntimeException("Form bulunamadı"));
+
+        List<FormBileseni> bilesenler =
+                formBilesenRepository.findByForm_FormId(form.getFormId());
+
+        Set<Long> users = new HashSet<>();
 
         for (FormBileseni b : bilesenler) {
-            List<FormBileseniAtama> atamalar = atamaRepository.findByBilesenId(b.getBilesenId());
+            List<FormBileseniAtama> atamalar =
+                    atamaRepository.findByBilesenId(b.getBilesenId());
 
             for (FormBileseniAtama a : atamalar) {
                 if ("USER".equals(a.getTip())) {
-                    atanacakKullanicilar.add(a.getRefId());
+                    users.add(a.getRefId());
                 } else if ("ROLE".equals(a.getTip())) {
-                    List<KullaniciRol> roller = kullaniciRolRepository.findByRolId(a.getRefId());
+                    List<KullaniciRol> roller =
+                            kullaniciRolRepository.findByRolId(a.getRefId());
+
                     for (KullaniciRol kr : roller) {
-                        atanacakKullanicilar.add(kr.getKullaniciId());
+                        users.add(kr.getKullaniciId());
                     }
                 }
             }
         }
 
-        // Eğer hiç kullanıcı bulunamadıysa (Sistem hatası veya eksik tanım)
-        if (atanacakKullanicilar.isEmpty()) {
-            throw new RuntimeException("Yeni adım için atanacak kullanıcı bulunamadı!");
+        if (users.isEmpty()) {
+            throw new RuntimeException("Atanacak kullanıcı bulunamadı!");
         }
 
-        for (Long kId : atanacakKullanicilar) {
-            SurecAdim newTask = new SurecAdim();
-            newTask.setSurecId(surecId);
-            newTask.setAdimId(adimId);
-            newTask.setAtananKullaniciId(kId);
-            newTask.setDurum("BEKLIYOR");
-            newTask.setTamamlandiMi(false);
-            newTask.setBaslamaTarihi(LocalDateTime.now());
-            surecAdimRepository.save(newTask);
+        for (Long uid : users) {
+            SurecAdim task = new SurecAdim();
+            task.setSurecId(surecId);
+            task.setAdimId(adimId);
+            task.setAtananKullaniciId(uid);
+            task.setDurum("BEKLIYOR");
+            task.setTamamlandiMi(false);
+            task.setBaslamaTarihi(LocalDateTime.now());
+            surecAdimRepository.save(task);
         }
     }
 }

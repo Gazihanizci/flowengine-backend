@@ -24,4 +24,18 @@ public class AkisAdim {
 
     @Column(name = "adim_sirasi", nullable = false)
     private Integer adimSirasi;
+    @Column(name = "external_flow_enabled")
+    private Boolean externalFlowEnabled = false;
+
+    @Column(name = "external_flow_id")
+    private Long externalFlowId;
+
+    @Column(name = "wait_for_external")
+    private Boolean waitForExternal = true;
+
+    @Column(name = "resume_parent")
+    private Boolean resumeParent = true;
+
+    @Column(name = "cancel_behavior")
+    private String cancelBehavior = "PROPAGATE";
 }

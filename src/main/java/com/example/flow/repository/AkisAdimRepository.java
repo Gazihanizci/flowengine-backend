@@ -14,4 +14,5 @@ public interface AkisAdimRepository extends JpaRepository<AkisAdim, Long> {
             Long akisId,
             Integer adimSirasi
     );
+
 }

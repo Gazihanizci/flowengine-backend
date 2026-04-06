@@ -20,7 +20,7 @@ public class FlowDesignerService {
     private final FormRepository formRepository;
     private final FormBileseniRepository formBileseniRepository;
     private final BilesenSecenegiRepository bilesenSecenegiRepository;
-    private final FormBileseniAtamaRepository atamaRepository; // 🔥 YENİ
+    private final FormBileseniAtamaRepository atamaRepository;
 
     @Transactional
     public FlowSaveResponse saveFlow(FlowSaveRequest request) {
@@ -43,6 +43,32 @@ public class FlowDesignerService {
             adim.setAkis(akis);
             adim.setAdimAdi(stepRequest.getStepName());
             adim.setAdimSirasi(stepRequest.getStepOrder());
+
+            // 🔥 EXTERNAL FLOW (KRİTİK)
+            adim.setExternalFlowEnabled(
+                    Boolean.TRUE.equals(stepRequest.getExternalFlowEnabled())
+            );
+
+            adim.setExternalFlowId(resolveExternalFlowId(stepRequest));
+
+            adim.setWaitForExternal(
+                    stepRequest.getWaitForExternalFlowCompletion() != null
+                            ? stepRequest.getWaitForExternalFlowCompletion()
+                            : true
+            );
+
+            adim.setResumeParent(
+                    stepRequest.getResumeParentAfterSubFlow() != null
+                            ? stepRequest.getResumeParentAfterSubFlow()
+                            : true
+            );
+
+            adim.setCancelBehavior(
+                    stepRequest.getCancelBehavior() != null
+                            ? stepRequest.getCancelBehavior()
+                            : "PROPAGATE"
+            );
+
             adim = akisAdimRepository.save(adim);
 
             // 🔥 FORM CREATE
@@ -64,8 +90,6 @@ public class FlowDesignerService {
             int autoOrder = 1;
 
             for (FieldSaveRequest fieldRequest : sortedFields) {
-
-
 
                 // 🔥 FORM BİLEŞENİ
                 FormBileseni bilesen = new FormBileseni();
@@ -106,7 +130,7 @@ public class FlowDesignerService {
                     }
                 }
 
-                // 🔥 OPTIONS (combo / radio)
+                // 🔥 OPTIONS
                 if (("COMBOBOX".equalsIgnoreCase(fieldRequest.getType())
                         || "RADIO".equalsIgnoreCase(fieldRequest.getType()))
                         && fieldRequest.getOptions() != null
@@ -129,5 +153,19 @@ public class FlowDesignerService {
                 akis.getAkisId(),
                 "Flow başarıyla kaydedildi"
         );
+    }
+
+    // 🔥 EXTERNAL FLOW ID RESOLVE
+    private Long resolveExternalFlowId(StepSaveRequest step) {
+
+        if (step.getExternalFlowId() != null) {
+            return step.getExternalFlowId();
+        }
+
+        if (step.getSubFlowId() != null) {
+            return step.getSubFlowId();
+        }
+
+        return step.getNextFlowId();
     }
 }

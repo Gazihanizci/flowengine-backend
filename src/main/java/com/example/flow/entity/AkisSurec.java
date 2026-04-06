@@ -27,4 +27,12 @@ public class AkisSurec {
     private LocalDateTime baslamaTarihi;
 
     private LocalDateTime bitisTarihi;
+    @Column(name = "parent_surec_id")
+    private Long parentSurecId;
+
+    @Column(name = "parent_adim_id")
+    private Long parentAdimId;
+
+    @Column(name = "resume_adim_sirasi")
+    private Integer resumeAdimSirasi;
 }

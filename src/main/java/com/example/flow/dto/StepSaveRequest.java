@@ -20,4 +20,14 @@ public class StepSaveRequest {
 
     @Valid
     private List<FieldSaveRequest> fields;
+    private Boolean externalFlowEnabled;
+
+    private Long externalFlowId;
+    private Long subFlowId;
+    private Long nextFlowId;
+
+    private Boolean waitForExternalFlowCompletion;
+    private Boolean resumeParentAfterSubFlow;
+
+    private String cancelBehavior;
 }

@@ -51,12 +51,12 @@ public class WorkflowEngineService {
     public void resumeParentIfNeeded(AkisSurec childSurec, TaskService taskService) {
         if (childSurec.getParentSurecId() == null) return;
 
-        String correlationId = "CHILD_COMPLETED_" + childSurec.getSurecId();
+        String correlationId = "ALT_TAMAMLANDI_" + childSurec.getSurecId();
         if (surecEventiRepository.existsByCorrelationId(correlationId)) return;
 
         SurecEventi event = new SurecEventi();
         event.setSurecId(childSurec.getSurecId());
-        event.setEventType("CHILD_COMPLETED");
+        event.setEventType("ALT_TAMAMLANDI_");
         event.setCorrelationId(correlationId);
         event.setProcessedAt(LocalDateTime.now());
         surecEventiRepository.save(event);
@@ -64,7 +64,7 @@ public class WorkflowEngineService {
         AkisSurec parent = surecRepository.findById(childSurec.getParentSurecId())
                 .orElseThrow(() -> new RuntimeException("Parent süreç bulunamadı"));
 
-        parent.setDurum("RUNNING");
+        parent.setDurum("DEVAM_EDIYOR");
 
         Optional<AkisAdim> next = akisAdimRepository
                 .findFirstByAkis_AkisIdAndAdimSirasiGreaterThanOrderByAdimSirasiAsc(
@@ -96,12 +96,12 @@ public class WorkflowEngineService {
 
         String davranis = parentStep.getCancelBehavior();
 
-        if (davranis == null || "PROPAGATE".equalsIgnoreCase(davranis)) {
+        if (davranis == null || "Red Yansıması".equalsIgnoreCase(davranis)) {
             parent.setDurum("REDDEDILDI");
             parent.setBitisTarihi(LocalDateTime.now());
             surecRepository.save(parent);
-        } else if ("KEEP_WAITING".equalsIgnoreCase(davranis)) {
-            parent.setDurum("WAITING_EXTERNAL");
+        } else if ("BEKLEMEYE_DEVAM".equalsIgnoreCase(davranis)) {
+            parent.setDurum("HARICI_BEKLIYOR");
             surecRepository.save(parent);
         }
     }

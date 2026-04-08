@@ -22,6 +22,9 @@ public class FlowDesignerService {
     private final BilesenSecenegiRepository bilesenSecenegiRepository;
     private final FormBileseniAtamaRepository atamaRepository;
 
+    // 🔥 YENİ
+    private final FlowBaslatmaYetkiRepository yetkiRepository;
+
     @Transactional
     public FlowSaveResponse saveFlow(FlowSaveRequest request) {
 
@@ -31,6 +34,20 @@ public class FlowDesignerService {
         akis.setAciklama(request.getAciklama());
         akis.setAktif(true);
         akis = akisRepository.save(akis);
+
+        // 🔥 BAŞLATMA YETKİLERİNİ KAYDET (YENİ EKLENEN BLOK)
+        if (request.getBaslatmaYetkileri() != null) {
+
+            for (BaslatmaYetkiDto y : request.getBaslatmaYetkileri()) {
+
+                FlowBaslatmaYetki yetki = new FlowBaslatmaYetki();
+                yetki.setAkisId(akis.getAkisId());
+                yetki.setTip(y.getTip()); // USER / ROLE
+                yetki.setRefId(y.getRefId());
+
+                yetkiRepository.save(yetki);
+            }
+        }
 
         // 🔥 STEP SORT
         List<StepSaveRequest> sortedSteps = new ArrayList<>(request.getSteps());
@@ -44,7 +61,7 @@ public class FlowDesignerService {
             adim.setAdimAdi(stepRequest.getStepName());
             adim.setAdimSirasi(stepRequest.getStepOrder());
 
-            // 🔥 EXTERNAL FLOW (KRİTİK)
+            // 🔥 EXTERNAL FLOW
             adim.setExternalFlowEnabled(
                     Boolean.TRUE.equals(stepRequest.getExternalFlowEnabled())
             );
@@ -155,7 +172,6 @@ public class FlowDesignerService {
         );
     }
 
-    // 🔥 EXTERNAL FLOW ID RESOLVE
     private Long resolveExternalFlowId(StepSaveRequest step) {
 
         if (step.getExternalFlowId() != null) {

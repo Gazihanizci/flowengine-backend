@@ -20,4 +20,8 @@ public class FlowSaveRequest {
     @Valid
     @NotEmpty(message = "En az 1 step olmalıdır")
     private List<StepSaveRequest> steps;
+
+    // 🔥 YENİ EKLENEN ALAN
+    @Valid
+    private List<BaslatmaYetkiDto> baslatmaYetkileri;
 }

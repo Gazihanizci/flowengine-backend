@@ -1,14 +1,13 @@
 package com.example.flow.service;
 
 import com.example.flow.entity.*;
-import com.example.flow.repository.AkisAdimRepository;
-import com.example.flow.repository.SurecEventiRepository;
-import com.example.flow.repository.SurecRepository;
+import com.example.flow.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 @Service
@@ -19,8 +18,46 @@ public class WorkflowEngineService {
     private final AkisAdimRepository akisAdimRepository;
     private final SurecEventiRepository surecEventiRepository;
 
+    // İzinler için gerekli repolar (Senin orijinalinde vardı)
+    private final FlowBaslatmaYetkiRepository yetkiRepository;
+    private final FlowBaslatmaIstekRepository istekRepository;
+    private final KullaniciRolRepository kullaniciRolRepository;
+    private final BildirimRepository bildirimRepository;
+
     @Transactional
     public void startExternalFlow(AkisSurec parentSurec, AkisAdim step, TaskService taskService) {
+        Long userId = parentSurec.getBaslatanKullaniciId();
+
+        // --- İZİN KONTROLÜ BAŞLANGIÇ ---
+        boolean yetkiliMi = checkPermission(step.getExternalFlowId(), userId);
+
+        if (!yetkiliMi) {
+            // İzin İsteği Oluştur
+            final FlowBaslatmaIstek istek = new FlowBaslatmaIstek();
+            istek.setAkisId(step.getExternalFlowId());
+            istek.setIsteyenKullaniciId(userId);
+            istek.setDurum("BEKLIYOR");
+            istek.setOlusturmaTarihi(LocalDateTime.now());
+
+            // Geri dönüş bilgileri
+            istek.setParentSurecId(parentSurec.getSurecId());
+            istek.setParentAdimId(step.getAdimId());
+            istek.setResumeAdimSirasi(step.getAdimSirasi() + 1);
+
+            final FlowBaslatmaIstek savedIstek = istekRepository.save(istek);
+            sendNotifications(step.getExternalFlowId(), savedIstek.getId());
+
+            parentSurec.setDurum("WAITING_APPROVAL");
+            surecRepository.save(parentSurec);
+            return;
+        }
+        // --- İZİN KONTROLÜ BİTİŞ ---
+
+        // ✅ YETKİ VARSA DOĞRUDAN BAŞLAT (Senin orijinal metodun)
+        launchChild(parentSurec, step, taskService);
+    }
+
+    private void launchChild(AkisSurec parentSurec, AkisAdim step, TaskService taskService) {
         parentSurec.setDurum("WAITING_EXTERNAL");
         parentSurec.setMevcutAdimId(step.getAdimId());
         surecRepository.save(parentSurec);
@@ -56,7 +93,7 @@ public class WorkflowEngineService {
 
         SurecEventi event = new SurecEventi();
         event.setSurecId(childSurec.getSurecId());
-        event.setEventType("ALT_TAMAMLANDI_");
+        event.setEventType("ALT_TAMAMLANDI"); // Senin orijinalindeki alt çizgi düzeltildi
         event.setCorrelationId(correlationId);
         event.setProcessedAt(LocalDateTime.now());
         surecEventiRepository.save(event);
@@ -104,5 +141,39 @@ public class WorkflowEngineService {
             parent.setDurum("HARICI_BEKLIYOR");
             surecRepository.save(parent);
         }
+    }
+
+    // --- Yardımcı Metotlar ---
+    private boolean checkPermission(Long flowId, Long userId) {
+        if (yetkiRepository.existsByAkisIdAndTipAndRefId(flowId, "USER", userId)) return true;
+        List<KullaniciRol> roller = kullaniciRolRepository.findByKullaniciId(userId);
+        for (KullaniciRol rol : roller) {
+            if (yetkiRepository.existsByAkisIdAndTipAndRefId(flowId, "ROLE", rol.getRolId())) return true;
+        }
+        return false;
+    }
+
+    private void sendNotifications(Long flowId, Long requestId) {
+        List<FlowBaslatmaYetki> yetkiler = yetkiRepository.findByAkisId(flowId);
+        for (FlowBaslatmaYetki y : yetkiler) {
+            if ("USER".equalsIgnoreCase(y.getTip())) {
+                saveBildirim(y.getRefId(), requestId);
+            } else if ("ROLE".equalsIgnoreCase(y.getTip())) {
+                kullaniciRolRepository.findByRolId(y.getRefId())
+                        .forEach(kr -> saveBildirim(kr.getKullaniciId(), requestId));
+            }
+        }
+    }
+
+    private void saveBildirim(Long userId, Long requestId) {
+        Bildirim b = new Bildirim();
+        b.setKullaniciId(userId);
+        b.setBaslik("Alt Flow Başlatma İsteği");
+        b.setMesaj("Alt flow için onay gerekiyor");
+        b.setTip("SUBFLOW_REQUEST");
+        b.setOkundu(false);
+        b.setOlusturmaTarihi(LocalDateTime.now());
+        b.setReferansIstekId(requestId);
+        bildirimRepository.save(b);
     }
 }

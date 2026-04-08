@@ -17,7 +17,6 @@ public class TaskActionService {
     private final SurecRepository surecRepository;
     private final AdimGecisKuralRepository gecisRepository;
     private final AkisAdimRepository akisAdimRepository;
-
     private final FormService formService;
     private final TaskService taskService;
     private final WorkflowEngineService workflowEngineService;
@@ -52,7 +51,7 @@ public class TaskActionService {
         AkisSurec surec = surecRepository.findById(currentTask.getSurecId())
                 .orElseThrow(() -> new RuntimeException("Süreç bulunamadı"));
 
-        // 4. DIŞ AKIŞ KONTROLÜ
+        // 4. DIŞ AKIŞ KONTROLÜ (Adım 1 tetikleyici ise alt flow başlar)
         if (Boolean.TRUE.equals(step.getExternalFlowEnabled()) && step.getExternalFlowId() != null) {
             workflowEngineService.startExternalFlow(surec, step, taskService);
             return;
@@ -84,6 +83,8 @@ public class TaskActionService {
                 surec.setDurum("TAMAMLANDI");
                 surec.setBitisTarihi(LocalDateTime.now());
                 surecRepository.save(surec);
+
+                // 🔥 KRİTİK: Akış bittiğinde eğer bu bir child ise babayı uyandırıyoruz
                 workflowEngineService.resumeParentIfNeeded(surec, taskService);
                 return null;
             }
@@ -96,7 +97,6 @@ public class TaskActionService {
             workflowEngineService.handleChildRejected(surec);
             return null;
         }
-
         return null;
     }
 }

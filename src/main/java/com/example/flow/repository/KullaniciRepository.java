@@ -23,4 +23,10 @@ public interface KullaniciRepository extends JpaRepository<Kullanici, Long> {
     List<KullaniciMeResponse> findMyRoles(@Param("kullaniciId") Long kullaniciId);
 
     Optional<Kullanici> findByEmail(String email);
+    @Query("""
+    SELECT kr.kullaniciId
+    FROM KullaniciRol kr
+    WHERE kr.rolId = :rolId
+""")
+    List<Long> findKullaniciIdsByRolId(@Param("rolId") Long rolId);
 }

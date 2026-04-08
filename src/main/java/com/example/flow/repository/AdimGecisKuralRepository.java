@@ -14,4 +14,5 @@ public interface AdimGecisKuralRepository
 
     List<AdimGecisKural>
     findByAdimIdAndAksiyonId(Long adimId, Long aksiyonId);
+    List<AdimGecisKural> findByAdimId(Long adimId);
 }

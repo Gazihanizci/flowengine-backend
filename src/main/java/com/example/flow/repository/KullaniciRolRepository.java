@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface KullaniciRolRepository extends JpaRepository<KullaniciRol, Long> {
 
@@ -23,6 +24,9 @@ public interface KullaniciRolRepository extends JpaRepository<KullaniciRol, Long
     List<Object[]> findAllUsersWithRoles();
     List<KullaniciRol> findByRolId(Long rolId);
     List<KullaniciRol> findByKullaniciId(Long kullaniciId);
+    Optional<KullaniciRol> findByKullaniciIdAndRolId(Long kullaniciId, Long rolId);
+
+    void deleteByKullaniciIdAndRolId(Long kullaniciId, Long rolId);
 
 
 }

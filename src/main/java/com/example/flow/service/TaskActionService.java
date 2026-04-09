@@ -7,7 +7,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.*;
+import java.util.List;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -17,86 +18,156 @@ public class TaskActionService {
     private final SurecRepository surecRepository;
     private final AdimGecisKuralRepository gecisRepository;
     private final AkisAdimRepository akisAdimRepository;
+
     private final FormService formService;
     private final TaskService taskService;
     private final WorkflowEngineService workflowEngineService;
 
+    private final SurecHareketRepository surecHareketRepository;
+    private final PdfReportService pdfReportService;
+
     @Transactional
-    public void handleAction(Long taskId, Long aksiyonId, Map<Long, String> formData) {
-        if (aksiyonId == null || (aksiyonId != 1 && aksiyonId != 2)) {
-            throw new RuntimeException("Geçersiz aksiyon");
+    public void handleAction(Long taskId, Long aksiyonId, java.util.Map<Long, String> formData) {
+
+        // 🔥 1. AKSİYON KONTROL (3 eklendi)
+        if (aksiyonId == null || (aksiyonId != 1 && aksiyonId != 2 && aksiyonId != 3)) {
+            throw new RuntimeException("Geçersiz aksiyon (1=Onay, 2=Kaydet, 3=Red)");
         }
 
+        // 🔥 2. TASK BUL
         SurecAdim currentTask = surecAdimRepository.findById(taskId)
                 .orElseThrow(() -> new RuntimeException("Task bulunamadı: " + taskId));
 
-        // 1. Form Doğrulama ve Kaydetme
-        formService.validateAndSaveFormData(currentTask.getSurecId(), currentTask.getAdimId(),
-                currentTask.getAtananKullaniciId(), formData);
+        Long surecId = currentTask.getSurecId();
+        Long adimId = currentTask.getAdimId();
+        Long userId = currentTask.getAtananKullaniciId();
 
-        // 2. Mevcut Taskı Kapat
+        // 🔥 3. KAYDET
+        if (aksiyonId == 2) {
+
+            formService.saveFormDraft(
+                    surecId,
+                    userId,
+                    formData
+            );
+
+            return;
+        }
+
+        // 🔥 4. RED
+        if (aksiyonId == 3) {
+
+            // hareket log
+            SurecHareket hareket = new SurecHareket();
+            hareket.setSurecId(surecId);
+            hareket.setAdimId(adimId);
+            hareket.setAksiyonId(aksiyonId);
+            hareket.setYapanKullaniciId(userId);
+            hareket.setYapilanIslem("Talep reddedildi");
+            hareket.setTarih(LocalDateTime.now());
+            surecHareketRepository.save(hareket);
+
+            // task kapat
+            currentTask.setDurum("REDDEDILDI");
+            currentTask.setTamamlandiMi(true);
+            currentTask.setBitisTarihi(LocalDateTime.now());
+            surecAdimRepository.save(currentTask);
+
+            // süreç kapat
+            AkisSurec surec = surecRepository.findById(surecId)
+                    .orElseThrow(() -> new RuntimeException("Süreç bulunamadı"));
+
+            surec.setDurum("REDDEDILDI");
+            surec.setBitisTarihi(LocalDateTime.now());
+            surecRepository.save(surec);
+
+            workflowEngineService.handleChildRejected(surec);
+
+            return;
+        }
+
+        // 🔥 5. ONAY (1)
+        formService.validateAndSaveFormData(
+                surecId,
+                adimId,
+                userId,
+                formData
+        );
+
+        // 🔥 HAREKET LOG
+        SurecHareket hareket = new SurecHareket();
+        hareket.setSurecId(surecId);
+        hareket.setAdimId(adimId);
+        hareket.setAksiyonId(aksiyonId);
+        hareket.setYapanKullaniciId(userId);
+        hareket.setYapilanIslem("Onaylandı");
+        hareket.setTarih(LocalDateTime.now());
+        surecHareketRepository.save(hareket);
+
+        // 🔥 TASK TAMAMLA
         currentTask.setDurum("TAMAMLANDI");
         currentTask.setTamamlandiMi(true);
         currentTask.setBitisTarihi(LocalDateTime.now());
         surecAdimRepository.save(currentTask);
 
-        // 3. Adım bazında tüm tasklar bitti mi kontrolü
-        if (!taskService.isStepFullyCompleted(currentTask.getSurecId(), currentTask.getAdimId())) {
+        if (!taskService.isStepFullyCompleted(surecId, adimId)) {
             return;
         }
 
-        AkisAdim step = akisAdimRepository.findById(currentTask.getAdimId())
+        AkisAdim step = akisAdimRepository.findById(adimId)
                 .orElseThrow(() -> new RuntimeException("Adım bulunamadı"));
 
-        AkisSurec surec = surecRepository.findById(currentTask.getSurecId())
+        AkisSurec surec = surecRepository.findById(surecId)
                 .orElseThrow(() -> new RuntimeException("Süreç bulunamadı"));
 
-        // 4. DIŞ AKIŞ KONTROLÜ (Adım 1 tetikleyici ise alt flow başlar)
         if (Boolean.TRUE.equals(step.getExternalFlowEnabled()) && step.getExternalFlowId() != null) {
             workflowEngineService.startExternalFlow(surec, step, taskService);
             return;
         }
 
-        // 5. SONRAKİ ADIM BELİRLEME
         Long nextStepId = determineNextStepId(surec, step, aksiyonId);
 
         if (nextStepId != null) {
             surec.setMevcutAdimId(nextStepId);
             surecRepository.save(surec);
-            taskService.createTasksForStep(surec.getSurecId(), nextStepId);
+            taskService.createTasksForStep(surecId, nextStepId);
         }
     }
 
     private Long determineNextStepId(AkisSurec surec, AkisAdim step, Long aksiyonId) {
-        List<AdimGecisKural> rules = gecisRepository.findByAdimIdAndAksiyonId(step.getAdimId(), aksiyonId);
+
+        List<AdimGecisKural> rules =
+                gecisRepository.findByAdimIdAndAksiyonId(step.getAdimId(), aksiyonId);
 
         if (!rules.isEmpty()) {
             return rules.get(0).getSonrakiAdimId();
         }
 
-        if (aksiyonId == 1) { // Onay
+        // 🔥 ONAY
+        if (aksiyonId == 1) {
+
             Optional<AkisAdim> next = akisAdimRepository
                     .findFirstByAkis_AkisIdAndAdimSirasiGreaterThanOrderByAdimSirasiAsc(
-                            surec.getAkisId(), step.getAdimSirasi());
+                            surec.getAkisId(),
+                            step.getAdimSirasi()
+                    );
 
             if (next.isEmpty()) {
+
                 surec.setDurum("TAMAMLANDI");
                 surec.setBitisTarihi(LocalDateTime.now());
                 surecRepository.save(surec);
 
-                // 🔥 KRİTİK: Akış bittiğinde eğer bu bir child ise babayı uyandırıyoruz
+                // 🔥 PDF
+                pdfReportService.generate(surec.getSurecId());
+
                 workflowEngineService.resumeParentIfNeeded(surec, taskService);
                 return null;
             }
-            return next.get().getAdimId();
 
-        } else if (aksiyonId == 2) { // Red
-            surec.setDurum("REDDEDILDI");
-            surec.setBitisTarihi(LocalDateTime.now());
-            surecRepository.save(surec);
-            workflowEngineService.handleChildRejected(surec);
-            return null;
+            return next.get().getAdimId();
         }
+
         return null;
     }
 }

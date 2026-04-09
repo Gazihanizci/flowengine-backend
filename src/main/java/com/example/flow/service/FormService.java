@@ -23,7 +23,28 @@ public class FormService {
     private final FormBileseniRepository formBilesenRepository;
     private final FormVeriRepository formVeriRepository;
     private final FieldPermissionService fieldPermissionService;
+    @Transactional
+    public void saveFormDraft(Long surecId, Long userId, Map<Long, String> formData) {
 
+        if (formData == null) return;
+
+        for (Map.Entry<Long, String> entry : formData.entrySet()) {
+
+            fieldPermissionService.validate(userId, entry.getKey());
+
+            Optional<FormVeri> existing =
+                    formVeriRepository.findBySurecIdAndBilesenId(surecId, entry.getKey());
+
+            FormVeri fv = existing.orElse(new FormVeri());
+            fv.setSurecId(surecId);
+            fv.setBilesenId(entry.getKey());
+            fv.setDeger(entry.getValue());
+            fv.setKaydedenKullaniciId(userId);
+            fv.setKayitTarihi(LocalDateTime.now());
+
+            formVeriRepository.save(fv);
+        }
+    }
     @Transactional
     public void validateAndSaveFormData(Long surecId, Long adimId, Long userId, Map<Long, String> formData) {
         Form form = formRepository.findByAdimId(adimId).orElse(null);

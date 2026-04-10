@@ -8,6 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @Service
@@ -27,9 +28,13 @@ public class TaskActionService {
     private final PdfReportService pdfReportService;
 
     @Transactional
-    public void handleAction(Long taskId, Long aksiyonId, java.util.Map<Long, String> formData) {
+    public void handleAction(
+            Long taskId,
+            Long aksiyonId,
+            Map<Long, String> formData
+    ) {
 
-        // 🔥 1. AKSİYON KONTROL (3 eklendi)
+        // 🔥 1. AKSİYON KONTROL
         if (aksiyonId == null || (aksiyonId != 1 && aksiyonId != 2 && aksiyonId != 3)) {
             throw new RuntimeException("Geçersiz aksiyon (1=Onay, 2=Kaydet, 3=Red)");
         }
@@ -42,7 +47,7 @@ public class TaskActionService {
         Long adimId = currentTask.getAdimId();
         Long userId = currentTask.getAtananKullaniciId();
 
-        // 🔥 3. KAYDET
+        // 🔥 3. KAYDET (Draft)
         if (aksiyonId == 2) {
 
             formService.saveFormDraft(
@@ -57,7 +62,6 @@ public class TaskActionService {
         // 🔥 4. RED
         if (aksiyonId == 3) {
 
-            // hareket log
             SurecHareket hareket = new SurecHareket();
             hareket.setSurecId(surecId);
             hareket.setAdimId(adimId);
@@ -86,7 +90,7 @@ public class TaskActionService {
             return;
         }
 
-        // 🔥 5. ONAY (1)
+        // 🔥 5. ONAY
         formService.validateAndSaveFormData(
                 surecId,
                 adimId,
@@ -110,6 +114,7 @@ public class TaskActionService {
         currentTask.setBitisTarihi(LocalDateTime.now());
         surecAdimRepository.save(currentTask);
 
+        // 🔥 PARALLEL CONTROL
         if (!taskService.isStepFullyCompleted(surecId, adimId)) {
             return;
         }
@@ -120,6 +125,7 @@ public class TaskActionService {
         AkisSurec surec = surecRepository.findById(surecId)
                 .orElseThrow(() -> new RuntimeException("Süreç bulunamadı"));
 
+        // 🔥 SUBFLOW
         if (Boolean.TRUE.equals(step.getExternalFlowEnabled()) && step.getExternalFlowId() != null) {
             workflowEngineService.startExternalFlow(surec, step, taskService);
             return;
@@ -158,7 +164,6 @@ public class TaskActionService {
                 surec.setBitisTarihi(LocalDateTime.now());
                 surecRepository.save(surec);
 
-                // 🔥 PDF
                 pdfReportService.generate(surec.getSurecId());
 
                 workflowEngineService.resumeParentIfNeeded(surec, taskService);

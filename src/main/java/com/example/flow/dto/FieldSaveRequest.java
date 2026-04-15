@@ -22,6 +22,7 @@ public class FieldSaveRequest {
     private Boolean required;
 
     private Integer orderNo;
+    private List<PermissionDto> permissions;
 
     // 🔥 YENİ (çoklu destek)
     private List<Long> roleIds;

@@ -16,25 +16,26 @@ public class FieldPermissionService {
     private final FormBileseniAtamaRepository atamaRepository;
     private final KullaniciRolRepository kullaniciRolRepository;
 
-    public void validate(Long userId, Long bilesenId) {
+    private boolean hasPermission(Long userId, Long bilesenId, String yetkiTipi) {
 
         List<FormBileseniAtama> atamalar =
                 atamaRepository.findByBilesenId(bilesenId);
 
-        // 👉 hiç atama yoksa herkes doldurabilir
-        if (atamalar.isEmpty()) return;
-
-        boolean yetkili = false;
+        if (atamalar.isEmpty()) return true;
 
         for (FormBileseniAtama a : atamalar) {
 
-            // USER bazlı
+            boolean yetkiUygun =
+                    yetkiTipi.equals(a.getYetkiTipi()) ||
+                            ("VIEW".equals(yetkiTipi) && "EDIT".equals(a.getYetkiTipi()));
+
+            if (!yetkiUygun) continue;
+
             if ("USER".equals(a.getTip())
                     && a.getRefId().equals(userId)) {
-                yetkili = true;
+                return true;
             }
 
-            // ROLE bazlı
             if ("ROLE".equals(a.getTip())) {
 
                 List<KullaniciRol> roller =
@@ -42,14 +43,24 @@ public class FieldPermissionService {
 
                 for (KullaniciRol kr : roller) {
                     if (kr.getKullaniciId().equals(userId)) {
-                        yetkili = true;
+                        return true;
                     }
                 }
             }
         }
 
-        if (!yetkili) {
-            throw new RuntimeException("Bu alanı doldurma yetkin yok!");
+        return false;
+    }
+
+    public void validateView(Long userId, Long bilesenId) {
+        if (!hasPermission(userId, bilesenId, "VIEW")) {
+            throw new RuntimeException("Bu alanı görme yetkin yok!");
+        }
+    }
+
+    public void validateEdit(Long userId, Long bilesenId) {
+        if (!hasPermission(userId, bilesenId, "EDIT")) {
+            throw new RuntimeException("Bu alanı düzenleme yetkin yok!");
         }
     }
 }

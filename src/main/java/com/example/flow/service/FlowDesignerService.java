@@ -21,47 +21,44 @@ public class FlowDesignerService {
     private final FormBileseniRepository formBileseniRepository;
     private final BilesenSecenegiRepository bilesenSecenegiRepository;
     private final FormBileseniAtamaRepository atamaRepository;
-
-    // 🔥 YENİ
     private final FlowBaslatmaYetkiRepository yetkiRepository;
 
     @Transactional
     public FlowSaveResponse saveFlow(FlowSaveRequest request) {
 
-        // 🔥 FLOW CREATE
         Akis akis = new Akis();
         akis.setAkisAdi(request.getFlowName());
         akis.setAciklama(request.getAciklama());
         akis.setAktif(true);
         akis = akisRepository.save(akis);
 
-        // 🔥 BAŞLATMA YETKİLERİNİ KAYDET (YENİ EKLENEN BLOK)
         if (request.getBaslatmaYetkileri() != null) {
-
             for (BaslatmaYetkiDto y : request.getBaslatmaYetkileri()) {
-
                 FlowBaslatmaYetki yetki = new FlowBaslatmaYetki();
                 yetki.setAkisId(akis.getAkisId());
-                yetki.setTip(y.getTip()); // USER / ROLE
+                yetki.setTip(y.getTip());
                 yetki.setRefId(y.getRefId());
-
                 yetkiRepository.save(yetki);
             }
         }
 
-        // 🔥 STEP SORT
+        if (request.getSteps() == null || request.getSteps().isEmpty()) {
+            return new FlowSaveResponse(
+                    akis.getAkisId(),
+                    "Flow başarıyla kaydedildi"
+            );
+        }
+
         List<StepSaveRequest> sortedSteps = new ArrayList<>(request.getSteps());
         sortedSteps.sort(Comparator.comparing(StepSaveRequest::getStepOrder));
 
         for (StepSaveRequest stepRequest : sortedSteps) {
 
-            // 🔥 STEP CREATE
             AkisAdim adim = new AkisAdim();
             adim.setAkis(akis);
             adim.setAdimAdi(stepRequest.getStepName());
             adim.setAdimSirasi(stepRequest.getStepOrder());
 
-            // 🔥 EXTERNAL FLOW
             adim.setExternalFlowEnabled(
                     Boolean.TRUE.equals(stepRequest.getExternalFlowEnabled())
             );
@@ -88,7 +85,6 @@ public class FlowDesignerService {
 
             adim = akisAdimRepository.save(adim);
 
-            // 🔥 FORM CREATE
             Form form = new Form();
             form.setAdim(adim);
             form.setFormAdi(stepRequest.getStepName() + " Formu");
@@ -98,7 +94,6 @@ public class FlowDesignerService {
                 continue;
             }
 
-            // 🔥 FIELD SORT
             List<FieldSaveRequest> sortedFields = new ArrayList<>(stepRequest.getFields());
             sortedFields.sort(Comparator.comparing(f ->
                     f.getOrderNo() == null ? Integer.MAX_VALUE : f.getOrderNo()
@@ -108,7 +103,6 @@ public class FlowDesignerService {
 
             for (FieldSaveRequest fieldRequest : sortedFields) {
 
-                // 🔥 FORM BİLEŞENİ
                 FormBileseni bilesen = new FormBileseni();
                 bilesen.setForm(form);
                 bilesen.setBilesenTipi(fieldRequest.getType());
@@ -121,45 +115,27 @@ public class FlowDesignerService {
 
                 bilesen = formBileseniRepository.save(bilesen);
 
-                // 🔥 USER ATAMA
-                if (fieldRequest.getUserIds() != null) {
-                    for (Long userId : fieldRequest.getUserIds()) {
-
+                if (fieldRequest.getPermissions() != null && !fieldRequest.getPermissions().isEmpty()) {
+                    for (PermissionDto p : fieldRequest.getPermissions()) {
                         FormBileseniAtama atama = new FormBileseniAtama();
                         atama.setBilesenId(bilesen.getBilesenId());
-                        atama.setTip("USER");
-                        atama.setRefId(userId);
-
+                        atama.setTip(p.getTip());
+                        atama.setRefId(p.getRefId());
+                        atama.setYetkiTipi(p.getYetkiTipi());
                         atamaRepository.save(atama);
                     }
                 }
 
-                // 🔥 ROLE ATAMA
-                if (fieldRequest.getRoleIds() != null) {
-                    for (Long roleId : fieldRequest.getRoleIds()) {
-
-                        FormBileseniAtama atama = new FormBileseniAtama();
-                        atama.setBilesenId(bilesen.getBilesenId());
-                        atama.setTip("ROLE");
-                        atama.setRefId(roleId);
-
-                        atamaRepository.save(atama);
-                    }
-                }
-
-                // 🔥 OPTIONS
                 if (("COMBOBOX".equalsIgnoreCase(fieldRequest.getType())
                         || "RADIO".equalsIgnoreCase(fieldRequest.getType()))
                         && fieldRequest.getOptions() != null
                         && !fieldRequest.getOptions().isEmpty()) {
 
                     for (OptionSaveRequest optionRequest : fieldRequest.getOptions()) {
-
                         BilesenSecenegi secenek = new BilesenSecenegi();
                         secenek.setBilesen(bilesen);
                         secenek.setEtiket(optionRequest.getLabel());
                         secenek.setDeger(optionRequest.getValue());
-
                         bilesenSecenegiRepository.save(secenek);
                     }
                 }
@@ -173,7 +149,6 @@ public class FlowDesignerService {
     }
 
     private Long resolveExternalFlowId(StepSaveRequest step) {
-
         if (step.getExternalFlowId() != null) {
             return step.getExternalFlowId();
         }

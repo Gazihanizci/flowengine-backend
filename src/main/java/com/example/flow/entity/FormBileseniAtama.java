@@ -16,7 +16,8 @@ public class FormBileseniAtama {
 
     @Column(name = "bilesen_id")
     private Long bilesenId;
-
+    @Column(name = "yetki_tipi")
+    private String yetkiTipi;
     @Column(name = "tip")
     private String tip; // USER / ROLE
 

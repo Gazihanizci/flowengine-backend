@@ -24,8 +24,7 @@ public class MyTasksService {
     public List<TaskResponse> getMyTasks(Long userId) {
 
         List<SurecAdim> tasks =
-                surecAdimRepository
-                        .findByAtananKullaniciIdAndDurum(userId, "BEKLIYOR");
+                surecAdimRepository.findByAtananKullaniciIdAndDurum(userId, "BEKLIYOR");
 
         List<TaskResponse> responseList = new ArrayList<>();
 
@@ -36,14 +35,12 @@ public class MyTasksService {
             tr.setSurecId(task.getSurecId());
             tr.setAdimId(task.getAdimId());
 
-            // STEP
             AkisAdim step = akisAdimRepository
                     .findById(task.getAdimId())
                     .orElseThrow();
 
             tr.setAdimAdi(step.getAdimAdi());
 
-            // 🔥 FORM
             Form form = formRepository
                     .findByAdimId(task.getAdimId())
                     .orElse(null);
@@ -52,29 +49,23 @@ public class MyTasksService {
 
             if (form != null) {
 
-                // 🔥 TÜM BİLEŞENLER
                 List<FormBileseni> bilesenler =
-                        formBilesenRepository
-                                .findByForm_FormId(form.getFormId());
+                        formBilesenRepository.findByForm_FormId(form.getFormId());
 
-                // 🔥 VERİLER (Sadece bu süreç)
                 List<FormVeri> veriler =
                         formVeriRepository.findBySurecId(task.getSurecId());
 
-                // 🔥 PERFORMANCE: MAP
                 Map<Long, String> veriMap = new HashMap<>();
                 for (FormVeri v : veriler) {
                     veriMap.put(v.getBilesenId(), v.getDeger());
                 }
 
-                // 🔥 OPTIONS TEK SEFERDE ÇEK
                 List<BilesenSecenegi> tumSecenekler =
                         bilesenSecenegiRepository.findAll();
 
                 Map<Long, List<OptionResponse>> optionMap = new HashMap<>();
 
                 for (BilesenSecenegi s : tumSecenekler) {
-
                     Long bilesenId = s.getBilesen().getBilesenId();
 
                     optionMap.putIfAbsent(bilesenId, new ArrayList<>());
@@ -86,22 +77,21 @@ public class MyTasksService {
                     optionMap.get(bilesenId).add(op);
                 }
 
-                // 🔥 FIELD LOOP
                 for (FormBileseni b : bilesenler) {
 
-                    FieldResponse fr = new FieldResponse();
+                    boolean canView = hasPermission(userId, b.getBilesenId(), "VIEW");
+                    if (!canView) {
+                        continue;
+                    }
 
+                    boolean canEdit = hasPermission(userId, b.getBilesenId(), "EDIT");
+
+                    FieldResponse fr = new FieldResponse();
                     fr.setFieldId(b.getBilesenId());
                     fr.setType(b.getBilesenTipi());
                     fr.setLabel(b.getLabel());
-
-                    // 🔥 VALUE (DB’den gelen)
                     fr.setValue(veriMap.get(b.getBilesenId()));
-
-                    // 🔥 YETKİ
-                    fr.setEditable(checkPermission(userId, b.getBilesenId()));
-
-                    // 🔥 OPTIONS
+                    fr.setEditable(canEdit);
                     fr.setOptions(
                             optionMap.getOrDefault(
                                     b.getBilesenId(),
@@ -113,6 +103,11 @@ public class MyTasksService {
                 }
             }
 
+            // Kullanıcının görebildiği hiç alan yoksa task'i gösterme
+            if (fields.isEmpty()) {
+                continue;
+            }
+
             tr.setForm(fields);
             responseList.add(tr);
         }
@@ -120,15 +115,25 @@ public class MyTasksService {
         return responseList;
     }
 
-    // 🔥 YETKİ KONTROL
-    private boolean checkPermission(Long userId, Long bilesenId) {
+    private boolean hasPermission(Long userId, Long bilesenId, String yetkiTipi) {
 
         List<FormBileseniAtama> atamalar =
                 atamaRepository.findByBilesenId(bilesenId);
 
-        if (atamalar.isEmpty()) return true;
+        // hiç atama yoksa herkes görebilsin/düzenleyebilsin mantığı
+        if (atamalar.isEmpty()) {
+            return true;
+        }
 
         for (FormBileseniAtama a : atamalar) {
+
+            boolean yetkiUygun =
+                    yetkiTipi.equals(a.getYetkiTipi()) ||
+                            ("VIEW".equals(yetkiTipi) && "EDIT".equals(a.getYetkiTipi()));
+
+            if (!yetkiUygun) {
+                continue;
+            }
 
             if ("USER".equals(a.getTip())
                     && a.getRefId().equals(userId)) {

@@ -30,8 +30,7 @@ public class FormService {
 
         for (Map.Entry<Long, String> entry : formData.entrySet()) {
 
-            fieldPermissionService.validate(userId, entry.getKey());
-
+            fieldPermissionService.validateEdit(userId, entry.getKey());
             Optional<FormVeri> existing =
                     formVeriRepository.findBySurecIdAndBilesenId(surecId, entry.getKey());
 
@@ -62,8 +61,7 @@ public class FormService {
 
         if (formData != null) {
             for (Map.Entry<Long, String> entry : formData.entrySet()) {
-                fieldPermissionService.validate(userId, entry.getKey());
-
+                fieldPermissionService.validateEdit(userId, entry.getKey());
                 Optional<FormVeri> existing = formVeriRepository.findBySurecIdAndBilesenId(surecId, entry.getKey());
 
                 FormVeri fv = existing.orElse(new FormVeri());

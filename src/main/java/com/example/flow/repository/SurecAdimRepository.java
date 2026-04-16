@@ -16,4 +16,5 @@ public interface SurecAdimRepository
             Long adimId,
             String durum
     );
+    List<SurecAdim> findBySurecId(Long surecId);
 }

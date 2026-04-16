@@ -15,6 +15,7 @@ public class KullaniciRolAtamaService {
 
     private final KullaniciRolRepository repository;
 
+    // 🔥 TÜM ATAMALAR
     public List<KullaniciRolResponse> getAll() {
         return repository.findAll().stream().map(r -> {
             KullaniciRolResponse res = new KullaniciRolResponse();
@@ -24,7 +25,16 @@ public class KullaniciRolAtamaService {
         }).collect(Collectors.toList());
     }
 
+    // 🔥 ROL ATA (DUPLICATE ENGELLİ)
     public void assignRole(Long kullaniciId, Long rolId) {
+
+        boolean exists = repository
+                .findByKullaniciIdAndRolId(kullaniciId, rolId)
+                .isPresent();
+
+        if (exists) {
+            throw new RuntimeException("Bu rol zaten atanmış");
+        }
 
         KullaniciRol entity = new KullaniciRol();
         entity.setKullaniciId(kullaniciId);
@@ -33,10 +43,17 @@ public class KullaniciRolAtamaService {
         repository.save(entity);
     }
 
+    // 🔥 ROL SİL (GÜVENLİ)
     public void removeRole(Long kullaniciId, Long rolId) {
-        repository.deleteByKullaniciIdAndRolId(kullaniciId, rolId);
+
+        KullaniciRol entity = repository
+                .findByKullaniciIdAndRolId(kullaniciId, rolId)
+                .orElseThrow(() -> new RuntimeException("Silinecek rol bulunamadı"));
+
+        repository.delete(entity);
     }
 
+    // 🔥 ROL GÜNCELLE
     public void updateRole(Long kullaniciId, Long eskiRolId, Long yeniRolId) {
 
         KullaniciRol entity = repository
@@ -47,6 +64,7 @@ public class KullaniciRolAtamaService {
         repository.save(entity);
     }
 
+    // 🔥 KULLANICIYA AİT ROLLER
     public List<KullaniciRolResponse> getRoles(Long kullaniciId) {
 
         return repository.findByKullaniciId(kullaniciId)

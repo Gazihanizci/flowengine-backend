@@ -8,4 +8,5 @@ import java.util.List;
 public interface SurecHareketRepository extends JpaRepository<SurecHareket, Long> {
 
     List<SurecHareket> findBySurecIdOrderByTarihAsc(Long surecId);
+    List<SurecHareket> findByYapanKullaniciIdOrderByTarihDesc(Long userId);
 }

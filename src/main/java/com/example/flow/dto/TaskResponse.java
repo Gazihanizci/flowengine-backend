@@ -13,6 +13,7 @@ public class TaskResponse {
     private Long surecId;
     private Long adimId;
     private String adimAdi;
-
+    private String akisAdi;
+    private String akisAciklama;
     private List<FieldResponse> form;
 }

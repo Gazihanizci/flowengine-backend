@@ -18,13 +18,26 @@ public class KullaniciRolService {
 
         return repository.findAllUsersWithRoles()
                 .stream()
-                .map(row -> new KullaniciRolResponse(
-                        ((Number) row[0]).longValue(),
-                        (String) row[1],
-                        (String) row[2],
-                        ((Number) row[3]).longValue(),
-                        (String) row[4]
-                ))
+                .map(row -> {
+
+                    KullaniciRolResponse res = new KullaniciRolResponse();
+
+                    // 🔹 NULL SAFE
+                    res.setKullaniciId(((Number) row[0]).longValue());
+                    res.setAdSoyad((String) row[1]);
+                    res.setEmail((String) row[2]);
+
+                    // 🔥 BURASI KRİTİK (NULL CHECK)
+                    if (row[3] != null) {
+                        res.setRolId(((Number) row[3]).longValue());
+                        res.setRolAdi((String) row[4]);
+                    } else {
+                        res.setRolId(null);
+                        res.setRolAdi("ROL YOK");
+                    }
+
+                    return res;
+                })
                 .collect(Collectors.toList());
     }
 }

@@ -5,16 +5,15 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
 
-public interface SurecAdimRepository
-        extends JpaRepository<SurecAdim, Long> {
+public interface SurecAdimRepository extends JpaRepository<SurecAdim, Long> {
 
-    List<SurecAdim>
-    findBySurecIdAndAdimId(Long surecId, Long adimId);
+    List<SurecAdim> findBySurecIdAndAdimId(Long surecId, Long adimId);
+
     List<SurecAdim> findByAtananKullaniciIdAndDurum(Long userId, String durum);
-    long countBySurecIdAndAdimIdAndDurum(
-            Long surecId,
-            Long adimId,
-            String durum
-    );
+
+    long countBySurecIdAndAdimIdAndDurum(Long surecId, Long adimId, String durum);
+
     List<SurecAdim> findBySurecId(Long surecId);
+
+    boolean existsBySurecIdAndAdimIdAndAtananKullaniciId(Long surecId, Long adimId, Long atananKullaniciId);
 }

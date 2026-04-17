@@ -14,5 +14,5 @@ public interface AkisAdimRepository extends JpaRepository<AkisAdim, Long> {
             Long akisId,
             Integer adimSirasi
     );
-
+    List<AkisAdim> findByAkis_AkisIdOrderByAdimSirasiAsc(Long akisId);
 }

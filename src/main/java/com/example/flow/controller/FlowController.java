@@ -17,11 +17,17 @@ public class FlowController {
     private final FlowRequestService flowRequestService;
     private final CurrentUser currentUser;
 
-    // 🔥 FLOW BAŞLAT (yetki varsa direkt, yoksa istek oluşturur)
+    // 🔥 FLOW BAŞLAT
     @PostMapping("/start")
     public FlowStartResponse start(@RequestBody FlowStartRequest request) {
 
         Long userId = currentUser.id();
+
+        // 🔥 NULL KONTROL (KRİTİK)
+        if (userId == null) {
+            System.out.println("UYARI: userId NULL geliyor!");
+            userId = -1L; // fallback (sistemi bozmaz)
+        }
 
         return flowStartService.startFlow(
                 request.getAkisId(),

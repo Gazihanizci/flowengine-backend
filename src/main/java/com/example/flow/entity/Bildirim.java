@@ -40,5 +40,14 @@ public class Bildirim {
 
     @Column(name = "referans_adim_id")
     private Long referansAdimId;
+
+    @Column(name = "referans_istek_id")
     private Long referansIstekId;
+
+    // 🔥 YENİ
+    @Column(name = "gonderen_kullanici_id")
+    private Long gonderenKullaniciId;
+
+    @Column(name = "akis_id")
+    private Long akisId;
 }

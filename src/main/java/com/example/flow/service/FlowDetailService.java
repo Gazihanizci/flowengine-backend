@@ -10,120 +10,82 @@ import java.util.*;
 
 @Service
 @RequiredArgsConstructor
-public class MyTasksService {
-
-    private final FormVeriRepository formVeriRepository;
+public class FlowDetailService {
+    private final KullaniciRepository kullaniciRepository;
+    private final AkisRepository akisRepository;
+    private final SurecRepository surecRepository;
     private final SurecAdimRepository surecAdimRepository;
     private final AkisAdimRepository akisAdimRepository;
     private final FormRepository formRepository;
     private final FormBileseniRepository formBilesenRepository;
+    private final FormVeriRepository formVeriRepository;
     private final FormBileseniAtamaRepository atamaRepository;
     private final KullaniciRolRepository kullaniciRolRepository;
     private final BilesenSecenegiRepository bilesenSecenegiRepository;
 
-    private final SurecRepository surecRepository;
-    private final AkisRepository akisRepository;
+    public List<TaskResponse> getFlowDetail(Long surecId, Long userId) {
 
-    public List<TaskResponse> getMyTasks(Long userId) {
+        // 🔥 TÜM STEP’LER
+        List<AkisAdim> steps =
+                akisAdimRepository.findByAkis_AkisIdOrderByAdimSirasiAsc(
+                        surecRepository.findById(surecId).orElseThrow().getAkisId()
+                );
 
-        List<SurecAdim> tasks =
-                surecAdimRepository.findByAtananKullaniciIdAndDurum(userId, "BEKLIYOR");
+        // 🔥 TÜM TASK’LER (geçmiş + aktif)
+        List<SurecAdim> tasks = surecAdimRepository.findBySurecId(surecId);
+
+        Map<Long, SurecAdim> taskMap = new HashMap<>();
+        for (SurecAdim t : tasks) {
+            taskMap.put(t.getAdimId(), t);
+        }
 
         List<TaskResponse> responseList = new ArrayList<>();
 
-        for (SurecAdim task : tasks) {
+        for (AkisAdim step : steps) {
 
             TaskResponse tr = new TaskResponse();
-            tr.setTaskId(task.getId());
-            tr.setSurecId(task.getSurecId());
-            tr.setAdimId(task.getAdimId());
-
-            // 🔥 STEP
-            AkisAdim step = akisAdimRepository
-                    .findById(task.getAdimId())
-                    .orElseThrow();
-
+            tr.setAdimId(step.getAdimId());
             tr.setAdimAdi(step.getAdimAdi());
+            tr.setSurecId(surecId);
 
-            // 🔥 AKIŞ BİLGİSİ (FIX)
-            AkisSurec surec = surecRepository
-                    .findById(task.getSurecId())
-                    .orElseThrow();
+            SurecAdim relatedTask = taskMap.get(step.getAdimId());
 
-            Akis akis = akisRepository
-                    .findById(surec.getAkisId())
-                    .orElseThrow();
+            boolean isActive =
+                    relatedTask != null &&
+                            "BEKLIYOR".equals(relatedTask.getDurum()) &&
+                            userId.equals(relatedTask.getAtananKullaniciId());
 
-            tr.setAkisAdi(akis.getAkisAdi());
-            tr.setAkisAciklama(akis.getAciklama());
-
-            // 🔥 FORM
-            Form form = formRepository
-                    .findByAdimId(task.getAdimId())
-                    .orElse(null);
+            Form form = formRepository.findByAdimId(step.getAdimId()).orElse(null);
 
             List<FieldResponse> fields = new ArrayList<>();
 
             if (form != null) {
 
-                // 🔥 BİLEŞENLER
                 List<FormBileseni> bilesenler =
                         formBilesenRepository.findByForm_FormId(form.getFormId());
 
-                // 🔥 VERİLER
                 List<FormVeri> veriler =
-                        formVeriRepository.findBySurecId(task.getSurecId());
+                        formVeriRepository.findBySurecId(surecId);
 
                 Map<Long, String> veriMap = new HashMap<>();
                 for (FormVeri v : veriler) {
                     veriMap.put(v.getBilesenId(), v.getDeger());
                 }
 
-                // 🔥 OPTIONS
-                List<BilesenSecenegi> tumSecenekler =
-                        bilesenSecenegiRepository.findAll();
-
-                Map<Long, List<OptionResponse>> optionMap = new HashMap<>();
-
-                for (BilesenSecenegi s : tumSecenekler) {
-
-                    Long bilesenId = s.getBilesen().getBilesenId();
-
-                    optionMap.putIfAbsent(bilesenId, new ArrayList<>());
-
-                    OptionResponse op = new OptionResponse();
-                    op.setLabel(s.getEtiket());
-                    op.setValue(s.getDeger());
-
-                    optionMap.get(bilesenId).add(op);
-                }
-
-                // 🔥 FIELD LOOP
                 for (FormBileseni b : bilesenler) {
 
-                    // 👀 GÖRME YETKİSİ
                     boolean canView = hasPermission(userId, b.getBilesenId(), "VIEW");
+                    if (!canView) continue;
 
-                    if (!canView) {
-                        continue; // hiç gösterme
-                    }
-
-                    // ✍️ YAZMA YETKİSİ
-                    boolean canEdit = hasPermission(userId, b.getBilesenId(), "EDIT");
+                    boolean canEdit = isActive &&
+                            hasPermission(userId, b.getBilesenId(), "EDIT");
 
                     FieldResponse fr = new FieldResponse();
                     fr.setFieldId(b.getBilesenId());
-                    fr.setType(b.getBilesenTipi());
                     fr.setLabel(b.getLabel());
+                    fr.setType(b.getBilesenTipi());
                     fr.setValue(veriMap.get(b.getBilesenId()));
                     fr.setEditable(canEdit);
-
-                    fr.setOptions(
-                            optionMap.getOrDefault(
-                                    b.getBilesenId(),
-                                    new ArrayList<>()
-                            )
-                    );
 
                     fields.add(fr);
                 }
@@ -136,16 +98,12 @@ public class MyTasksService {
         return responseList;
     }
 
-    // 🔥 PERMISSION CORE
     private boolean hasPermission(Long userId, Long bilesenId, String yetkiTipi) {
 
         List<FormBileseniAtama> atamalar =
                 atamaRepository.findByBilesenId(bilesenId);
 
-        // hiç atama yoksa herkes görebilir
-        if (atamalar.isEmpty()) {
-            return true;
-        }
+        if (atamalar.isEmpty()) return true;
 
         for (FormBileseniAtama a : atamalar) {
 
@@ -156,13 +114,11 @@ public class MyTasksService {
 
             if (!yetkiUygun) continue;
 
-            // USER
             if ("USER".equalsIgnoreCase(a.getTip())
                     && a.getRefId().equals(userId)) {
                 return true;
             }
 
-            // ROLE
             if ("ROLE".equalsIgnoreCase(a.getTip())) {
 
                 List<KullaniciRol> roller =

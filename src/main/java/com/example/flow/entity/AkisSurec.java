@@ -18,7 +18,8 @@ public class AkisSurec {
 
     private Long akisId;
 
-
+    // AkisSurec.java
+    private Long baslatanKullaniciId;
     private Long mevcutAdimId;
 
     private String durum;

@@ -5,6 +5,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
+import java.util.Set;
 
 @Entity
 @Table(name = "flow_baslatma_istekleri")
@@ -27,4 +28,8 @@ public class FlowBaslatmaIstek {
     private String durum; // BEKLIYOR / ONAY / RED
 
     private LocalDateTime olusturmaTarihi;
+    @ElementCollection
+    @CollectionTable(name = "flow_istek_kullanicilar", joinColumns = @JoinColumn(name = "istek_id"))
+    @Column(name = "kullanici_id")
+    private Set<Long> assignedUserIds;
 }

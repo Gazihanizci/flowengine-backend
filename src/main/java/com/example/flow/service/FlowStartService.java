@@ -12,8 +12,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-@RequiredArgsConstructor
 @Service
+@RequiredArgsConstructor
 public class FlowStartService {
 
     private final AkisAdimRepository akisAdimRepository;
@@ -28,44 +28,49 @@ public class FlowStartService {
     private final FlowBaslatmaYetkiRepository yetkiRepository;
     private final FlowBaslatmaIstekRepository istekRepository;
 
+    private final KullaniciRepository kullaniciRepository;
+    private final AkisRepository akisRepository;
+
     public FlowStartResponse startFlow(Long akisId, Long userId) {
-        return startFlow(akisId, userId, false);
+        return startFlow(akisId, userId, false, null);
+    }
+
+    public FlowStartResponse startFlow(Long akisId, Long userId, boolean forceStart) {
+        return startFlow(akisId, userId, forceStart, null);
     }
 
     @Transactional
-    public FlowStartResponse startFlow(Long akisId, Long userId, boolean forceStart) {
+    public FlowStartResponse startFlow(
+            Long akisId,
+            Long userId,
+            boolean forceStart,
+            Set<Long> assignedUserIds
+    ) {
 
-        boolean yetkiliMi = false;
-
-        if (userId != null &&
-                yetkiRepository.existsByAkisIdAndTipAndRefId(akisId, "USER", userId)) {
-            yetkiliMi = true;
+        if (userId == null || userId <= 0) {
+            throw new RuntimeException("Geçersiz kullanıcı ID");
         }
 
-        if (!yetkiliMi && userId != null) {
-            List<KullaniciRol> roller =
-                    kullaniciRolRepository.findByKullaniciId(userId);
+        Kullanici kullanici = kullaniciRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("Kullanıcı bulunamadı"));
 
-            for (KullaniciRol rol : roller) {
-                if (yetkiRepository.existsByAkisIdAndTipAndRefId(
-                        akisId,
-                        "ROLE",
-                        rol.getRolId()
-                )) {
-                    yetkiliMi = true;
-                    break;
-                }
-            }
-        }
+        Akis akis = akisRepository.findById(akisId)
+                .orElseThrow(() -> new RuntimeException("Akış bulunamadı"));
 
-        // ❌ YETKİ YOK → İSTEK
-        if (!yetkiliMi && !forceStart) {
+        String kullaniciAdi = kullanici.getAdSoyad();
+        String akisAdi = akis.getAkisAdi();
+
+        // 🔥 HER ZAMAN İSTEK OLUŞTUR (forceStart değilse)
+        if (!forceStart) {
 
             FlowBaslatmaIstek istek = new FlowBaslatmaIstek();
             istek.setAkisId(akisId);
             istek.setIsteyenKullaniciId(userId);
             istek.setDurum("BEKLIYOR");
             istek.setOlusturmaTarihi(LocalDateTime.now());
+
+            // 🔥 EKLENDİ (assigned user taşıma)
+            istek.setAssignedUserIds(assignedUserIds);
 
             istek = istekRepository.save(istek);
 
@@ -95,12 +100,17 @@ public class FlowStartService {
 
                 Bildirim b = new Bildirim();
                 b.setKullaniciId(kId);
+
                 b.setBaslik("Flow Başlatma İsteği");
-                b.setMesaj("Bir kullanıcı flow başlatmak istiyor");
+                b.setMesaj(kullaniciAdi + " → '" + akisAdi + "' akışını başlatmak istiyor");
+
                 b.setTip("FLOW_REQUEST");
                 b.setOkundu(false);
                 b.setOlusturmaTarihi(LocalDateTime.now());
+
                 b.setReferansIstekId(istek.getId());
+                b.setGonderenKullaniciId(userId);
+                b.setAkisId(akisId);
 
                 bildirimRepository.save(b);
             }
@@ -108,16 +118,18 @@ public class FlowStartService {
             return new FlowStartResponse(null, null, "Başlatma isteği gönderildi");
         }
 
-        // 🔥 FLOW BAŞLATMA
+        // 🔥 FLOW BAŞLAT (APPROVE SONRASI)
 
         AkisAdim firstStep = akisAdimRepository
                 .findFirstByAkis_AkisIdOrderByAdimSirasiAsc(akisId)
                 .orElseThrow(() -> new RuntimeException("İlk adım bulunamadı"));
 
         AkisSurec surec = new AkisSurec();
+
         surec.setAkisId(akisId);
-        // ❌ BURASI KALDIRILDI → FK HATASI BİTTİ
-        // surec.setBaslatanKullaniciId(userId);
+
+        // 🔥🔥🔥 KRİTİK FIX (SORUNU ÇÖZEN SATIR)
+        surec.setBaslatanKullaniciId(userId);
 
         surec.setMevcutAdimId(firstStep.getAdimId());
         surec.setDurum("DEVAM");
@@ -125,39 +137,42 @@ public class FlowStartService {
 
         surec = surecRepository.save(surec);
 
-        Form form = formRepository.findByAdimId(firstStep.getAdimId())
-                .orElseThrow(() -> new RuntimeException("Form bulunamadı"));
-
-        List<FormBileseni> bilesenler =
-                formBilesenRepository.findByForm_FormId(form.getFormId());
-
         Set<Long> atanacakKullanicilar = new HashSet<>();
 
-        for (FormBileseni bilesen : bilesenler) {
+        if (assignedUserIds != null && !assignedUserIds.isEmpty()) {
 
-            List<FormBileseniAtama> atamalar =
-                    atamaRepository.findByBilesenId(bilesen.getBilesenId());
+            atanacakKullanicilar.addAll(assignedUserIds);
 
-            for (FormBileseniAtama atama : atamalar) {
+        } else {
 
-                if ("USER".equalsIgnoreCase(atama.getTip())) {
-                    atanacakKullanicilar.add(atama.getRefId());
-                }
+            Form form = formRepository.findByAdimId(firstStep.getAdimId())
+                    .orElseThrow(() -> new RuntimeException("Form bulunamadı"));
 
-                if ("ROLE".equalsIgnoreCase(atama.getTip())) {
+            List<FormBileseni> bilesenler =
+                    formBilesenRepository.findByForm_FormId(form.getFormId());
 
-                    List<KullaniciRol> roller =
-                            kullaniciRolRepository.findByRolId(atama.getRefId());
+            for (FormBileseni bilesen : bilesenler) {
 
-                    for (KullaniciRol kr : roller) {
-                        atanacakKullanicilar.add(kr.getKullaniciId());
+                List<FormBileseniAtama> atamalar =
+                        atamaRepository.findByBilesenId(bilesen.getBilesenId());
+
+                for (FormBileseniAtama atama : atamalar) {
+
+                    if ("USER".equalsIgnoreCase(atama.getTip())) {
+                        atanacakKullanicilar.add(atama.getRefId());
+                    }
+
+                    if ("ROLE".equalsIgnoreCase(atama.getTip())) {
+
+                        List<KullaniciRol> roller =
+                                kullaniciRolRepository.findByRolId(atama.getRefId());
+
+                        for (KullaniciRol kr : roller) {
+                            atanacakKullanicilar.add(kr.getKullaniciId());
+                        }
                     }
                 }
             }
-        }
-
-        if (atanacakKullanicilar.isEmpty()) {
-            throw new RuntimeException("Bu adım için atanacak kullanıcı bulunamadı");
         }
 
         for (Long kId : atanacakKullanicilar) {

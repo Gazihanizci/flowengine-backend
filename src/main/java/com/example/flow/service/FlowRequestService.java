@@ -1,12 +1,11 @@
 package com.example.flow.service;
 
+import com.example.flow.dto.FlowStartResponse;
 import com.example.flow.entity.*;
 import com.example.flow.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.time.LocalDateTime;
 
 @Service
 @RequiredArgsConstructor
@@ -14,44 +13,37 @@ public class FlowRequestService {
 
     private final FlowBaslatmaIstekRepository istekRepository;
     private final SurecRepository surecRepository;
-    private final AkisAdimRepository akisAdimRepository;
-    private final TaskService taskService;
+    private final FlowStartService flowStartService;
 
     @Transactional
     public void approve(Long requestId) {
-        FlowBaslatmaIstek istek = istekRepository.findById(requestId)
-                .orElseThrow(() -> new RuntimeException("İzin isteği bulunamadı: " + requestId));
 
-        // 1. İsteği onayla
+        FlowBaslatmaIstek istek = istekRepository.findById(requestId)
+                .orElseThrow(() -> new RuntimeException("İzin isteği bulunamadı"));
+
         istek.setDurum("ONAY");
         istekRepository.save(istek);
 
-        // 2. Alt Akışı (Child) oluştur ve PARENT bilgilerini bağla
-        // 🔥 BURASI DB'DEKİ 'BABASI' KOLONUNU DOLDURUR:
-        AkisSurec child = new AkisSurec();
-        child.setAkisId(istek.getAkisId());
-        child.setDurum("RUNNING");
-        child.setBaslamaTarihi(LocalDateTime.now());
+        // 🔥 EN KRİTİK SATIR
+        FlowStartResponse response = flowStartService.startFlow(
+                istek.getAkisId(),
+                istek.getIsteyenKullaniciId(),
+                true,
+                istek.getAssignedUserIds()
+        );
 
-        // Bağlantı bilgileri (İstekte kayıtlı olanlar)
-        child.setParentSurecId(istek.getParentSurecId());
-        child.setParentAdimId(istek.getParentAdimId());
-        child.setResumeAdimSirasi(istek.getResumeAdimSirasi());
+        // 🔥 PARENT BAĞLAMA
+        if (istek.getParentSurecId() != null && response.getSurecId() != null) {
 
-        AkisSurec savedChild = surecRepository.save(child);
+            AkisSurec child = surecRepository.findById(response.getSurecId())
+                    .orElseThrow(() -> new RuntimeException("Child süreç bulunamadı"));
 
-        // 3. Alt akışın ilk adımını bul ve görevi oluştur
-        AkisAdim firstStep = akisAdimRepository
-                .findFirstByAkis_AkisIdOrderByAdimSirasiAsc(savedChild.getAkisId())
-                .orElseThrow(() -> new RuntimeException("Alt akış adımı bulunamadı"));
+            child.setParentSurecId(istek.getParentSurecId());
+            child.setParentAdimId(istek.getParentAdimId());
+            child.setResumeAdimSirasi(istek.getResumeAdimSirasi());
 
-        savedChild.setMevcutAdimId(firstStep.getAdimId());
-        surecRepository.save(savedChild);
+            surecRepository.save(child);
 
-        taskService.createTasksForStep(savedChild.getSurecId(), firstStep.getAdimId());
-
-        // 4. Ana akışın (Parent) durumunu bekleme moduna al
-        if (istek.getParentSurecId() != null) {
             surecRepository.findById(istek.getParentSurecId()).ifPresent(parent -> {
                 parent.setDurum("WAITING_EXTERNAL");
                 surecRepository.save(parent);
@@ -61,6 +53,7 @@ public class FlowRequestService {
 
     @Transactional
     public void reject(Long requestId) {
+
         FlowBaslatmaIstek istek = istekRepository.findById(requestId)
                 .orElseThrow(() -> new RuntimeException("İzin isteği bulunamadı"));
 
@@ -70,7 +63,7 @@ public class FlowRequestService {
         if (istek.getParentSurecId() != null) {
             surecRepository.findById(istek.getParentSurecId()).ifPresent(parent -> {
                 parent.setDurum("REDDEDILDI");
-                parent.setBitisTarihi(LocalDateTime.now());
+                parent.setBitisTarihi(java.time.LocalDateTime.now());
                 surecRepository.save(parent);
             });
         }

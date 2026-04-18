@@ -23,10 +23,9 @@ public class FlowController {
 
         Long userId = currentUser.id();
 
-        // 🔥 NULL KONTROL (KRİTİK)
+        // ✅ DOĞRU KONTROL
         if (userId == null) {
-            System.out.println("UYARI: userId NULL geliyor!");
-            userId = -1L; // fallback (sistemi bozmaz)
+            throw new RuntimeException("Kullanıcı doğrulanamadı (userId null)");
         }
 
         return flowStartService.startFlow(
@@ -35,21 +34,19 @@ public class FlowController {
         );
     }
 
-    // 🔥 BAŞLATMA İSTEĞİNİ ONAYLA
+    // 🔥 ONAY
     @PostMapping("/requests/{requestId}/approve")
     public String approve(@PathVariable Long requestId) {
 
         flowRequestService.approve(requestId);
-
         return "Flow başlatıldı";
     }
 
-    // 🔥 BAŞLATMA İSTEĞİNİ REDDET
+    // 🔥 RED
     @PostMapping("/requests/{requestId}/reject")
     public String reject(@PathVariable Long requestId) {
 
         flowRequestService.reject(requestId);
-
         return "İstek reddedildi";
     }
 }

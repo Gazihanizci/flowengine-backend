@@ -28,26 +28,21 @@ public class FlowStartService {
     private final FlowBaslatmaYetkiRepository yetkiRepository;
     private final FlowBaslatmaIstekRepository istekRepository;
 
-    // 🔥 OVERLOAD: normal çağrı
     public FlowStartResponse startFlow(Long akisId, Long userId) {
         return startFlow(akisId, userId, false);
     }
 
-    // 🔥 ANA METHOD
     @Transactional
     public FlowStartResponse startFlow(Long akisId, Long userId, boolean forceStart) {
 
-        // 🔥 =========================
-        // 🔥 YETKİ KONTROL
-        // 🔥 =========================
-
         boolean yetkiliMi = false;
 
-        if (yetkiRepository.existsByAkisIdAndTipAndRefId(akisId, "USER", userId)) {
+        if (userId != null &&
+                yetkiRepository.existsByAkisIdAndTipAndRefId(akisId, "USER", userId)) {
             yetkiliMi = true;
         }
 
-        if (!yetkiliMi) {
+        if (!yetkiliMi && userId != null) {
             List<KullaniciRol> roller =
                     kullaniciRolRepository.findByKullaniciId(userId);
 
@@ -63,7 +58,7 @@ public class FlowStartService {
             }
         }
 
-        // ❌ YETKİ YOK + FORCE YOKSA → REQUEST
+        // ❌ YETKİ YOK → İSTEK
         if (!yetkiliMi && !forceStart) {
 
             FlowBaslatmaIstek istek = new FlowBaslatmaIstek();
@@ -113,9 +108,7 @@ public class FlowStartService {
             return new FlowStartResponse(null, null, "Başlatma isteği gönderildi");
         }
 
-        // 🔥 =========================
         // 🔥 FLOW BAŞLATMA
-        // 🔥 =========================
 
         AkisAdim firstStep = akisAdimRepository
                 .findFirstByAkis_AkisIdOrderByAdimSirasiAsc(akisId)
@@ -123,7 +116,9 @@ public class FlowStartService {
 
         AkisSurec surec = new AkisSurec();
         surec.setAkisId(akisId);
-        surec.setBaslatanKullaniciId(userId);
+        // ❌ BURASI KALDIRILDI → FK HATASI BİTTİ
+        // surec.setBaslatanKullaniciId(userId);
+
         surec.setMevcutAdimId(firstStep.getAdimId());
         surec.setDurum("DEVAM");
         surec.setBaslamaTarihi(LocalDateTime.now());
@@ -176,18 +171,6 @@ public class FlowStartService {
             task.setBaslamaTarihi(LocalDateTime.now());
 
             surecAdimRepository.save(task);
-
-            Bildirim b = new Bildirim();
-            b.setKullaniciId(kId);
-            b.setBaslik("Yeni görev atandı");
-            b.setMesaj("Size yeni bir görev atandı");
-            b.setTip("FLOW_TASK");
-            b.setOkundu(false);
-            b.setOlusturmaTarihi(LocalDateTime.now());
-            b.setReferansSurecId(surec.getSurecId());
-            b.setReferansAdimId(firstStep.getAdimId());
-
-            bildirimRepository.save(b);
         }
 
         return new FlowStartResponse(

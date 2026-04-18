@@ -30,7 +30,6 @@ public class FlowRequestService {
         // 🔥 BURASI DB'DEKİ 'BABASI' KOLONUNU DOLDURUR:
         AkisSurec child = new AkisSurec();
         child.setAkisId(istek.getAkisId());
-        child.setBaslatanKullaniciId(istek.getIsteyenKullaniciId());
         child.setDurum("RUNNING");
         child.setBaslamaTarihi(LocalDateTime.now());
 

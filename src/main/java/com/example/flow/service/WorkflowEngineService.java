@@ -26,16 +26,14 @@ public class WorkflowEngineService {
 
     @Transactional
     public void startExternalFlow(AkisSurec parentSurec, AkisAdim step, TaskService taskService) {
-        Long userId = parentSurec.getBaslatanKullaniciId();
 
         // --- İZİN KONTROLÜ BAŞLANGIÇ ---
-        boolean yetkiliMi = checkPermission(step.getExternalFlowId(), userId);
-
+        boolean yetkiliMi = false;
         if (!yetkiliMi) {
             // İzin İsteği Oluştur
             final FlowBaslatmaIstek istek = new FlowBaslatmaIstek();
             istek.setAkisId(step.getExternalFlowId());
-            istek.setIsteyenKullaniciId(userId);
+
             istek.setDurum("BEKLIYOR");
             istek.setOlusturmaTarihi(LocalDateTime.now());
 
@@ -64,7 +62,6 @@ public class WorkflowEngineService {
 
         AkisSurec child = new AkisSurec();
         child.setAkisId(step.getExternalFlowId());
-        child.setBaslatanKullaniciId(parentSurec.getBaslatanKullaniciId());
         child.setMevcutAdimId(null);
         child.setDurum("RUNNING");
         child.setBaslamaTarihi(LocalDateTime.now());

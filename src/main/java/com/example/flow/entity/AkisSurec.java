@@ -18,7 +18,6 @@ public class AkisSurec {
 
     private Long akisId;
 
-    private Long baslatanKullaniciId;
 
     private Long mevcutAdimId;
 

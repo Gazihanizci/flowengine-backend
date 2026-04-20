@@ -64,7 +64,7 @@ public class TaskActionService {
             return;
         }
 
-        // 🔹 ONAY (FORM KAYDET)
+        // 🔹 ONAY
         formService.validateAndSaveFormData(surecId, adimId, userId, formData);
 
         AkisAdim step = akisAdimRepository.findById(adimId).orElseThrow();
@@ -74,13 +74,11 @@ public class TaskActionService {
         if (Boolean.TRUE.equals(step.getExternalFlowEnabled())
                 && step.getExternalFlowId() != null) {
 
-            // ✅ TASK KAPAT
             currentTask.setDurum("TAMAMLANDI");
             currentTask.setTamamlandiMi(true);
             currentTask.setBitisTarihi(LocalDateTime.now());
             surecAdimRepository.save(currentTask);
 
-            // ✅ HAREKET LOG
             SurecHareket hareket = new SurecHareket();
             hareket.setSurecId(surecId);
             hareket.setAdimId(adimId);
@@ -90,17 +88,14 @@ public class TaskActionService {
             hareket.setTarih(LocalDateTime.now());
             surecHareketRepository.save(hareket);
 
-            // ✅ PARENT DURUM
             surec.setDurum("WAITING_APPROVAL");
             surecRepository.save(surec);
 
-            // ✅ CHILD FLOW İZİN
             workflowEngineService.startExternalFlow(surec, step, taskService);
-
             return;
         }
 
-        // 🔹 NORMAL HAREKET
+        // 🔹 NORMAL ONAY
         SurecHareket hareket = new SurecHareket();
         hareket.setSurecId(surecId);
         hareket.setAdimId(adimId);
@@ -110,30 +105,48 @@ public class TaskActionService {
         hareket.setTarih(LocalDateTime.now());
         surecHareketRepository.save(hareket);
 
-        // 🔹 TASK TAMAMLA
         currentTask.setDurum("TAMAMLANDI");
         currentTask.setTamamlandiMi(true);
         currentTask.setBitisTarihi(LocalDateTime.now());
         surecAdimRepository.save(currentTask);
 
         // 🔹 PARALLEL CHECK
-        // 🔥 CHILD FLOW VARSA PARALLEL CHECK YAPMA
-        if (!(Boolean.TRUE.equals(step.getExternalFlowEnabled())
-                && step.getExternalFlowId() != null)) {
+        boolean childFlow = surec.getParentSurecId() != null;
 
+        if (!childFlow) {
             if (!taskService.isStepFullyCompleted(surecId, adimId)) {
                 return;
             }
         }
 
-        // 🔹 SONRAKİ STEP
+        // 🔹 NEXT STEP
         Long nextStepId = determineNextStepId(surec, step, aksiyonId);
 
-        if (nextStepId != null) {
-            surec.setMevcutAdimId(nextStepId);
+        if (nextStepId == null) {
+
+            surec.setDurum("TAMAMLANDI");
+            surec.setBitisTarihi(LocalDateTime.now());
             surecRepository.save(surec);
-            taskService.createTasksForStep(surecId, nextStepId);
+
+            // 🔥 TÜM TASKLARI KAPAT (FIX)
+            List<SurecAdim> tasks = surecAdimRepository
+                    .findBySurecId(surecId);
+            for (SurecAdim t : tasks) {
+                if (!Boolean.TRUE.equals(t.getTamamlandiMi())) {
+                    t.setDurum("TAMAMLANDI");
+                    t.setTamamlandiMi(true);
+                    t.setBitisTarihi(LocalDateTime.now());
+                    surecAdimRepository.save(t);
+                }
+            }
+
+            workflowEngineService.resumeParentIfNeeded(surec, taskService);
+            return;
         }
+
+        surec.setMevcutAdimId(nextStepId);
+        surecRepository.save(surec);
+        taskService.createTasksForStep(surecId, nextStepId);
     }
 
     private Long determineNextStepId(AkisSurec surec, AkisAdim step, Long aksiyonId) {
@@ -153,21 +166,7 @@ public class TaskActionService {
                             step.getAdimSirasi()
                     );
 
-            if (next.isEmpty()) {
-
-                surec.setDurum("TAMAMLANDI");
-                surec.setBitisTarihi(LocalDateTime.now());
-                surecRepository.save(surec);
-
-                pdfReportService.generate(surec.getSurecId());
-
-                // 🔥 EN KRİTİK FIX
-                workflowEngineService.resumeParentIfNeeded(surec, taskService);
-
-                return null;
-            }
-
-            return next.get().getAdimId();
+            return next.map(AkisAdim::getAdimId).orElse(null);
         }
 
         return null;

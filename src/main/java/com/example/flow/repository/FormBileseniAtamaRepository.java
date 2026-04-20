@@ -8,4 +8,6 @@ import java.util.List;
 public interface FormBileseniAtamaRepository extends JpaRepository<FormBileseniAtama, Long> {
 
     List<FormBileseniAtama> findByBilesenId(Long bilesenId);
+    List<FormBileseniAtama> findByBilesenIdAndYetkiTipi(Long bilesenId, String yetkiTipi);
+
 }

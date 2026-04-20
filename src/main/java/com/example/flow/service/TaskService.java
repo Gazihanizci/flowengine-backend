@@ -1,7 +1,15 @@
 package com.example.flow.service;
 
-import com.example.flow.entity.*;
-import com.example.flow.repository.*;
+import com.example.flow.entity.Form;
+import com.example.flow.entity.FormBileseni;
+import com.example.flow.entity.FormBileseniAtama;
+import com.example.flow.entity.KullaniciRol;
+import com.example.flow.entity.SurecAdim;
+import com.example.flow.repository.FormBileseniAtamaRepository;
+import com.example.flow.repository.FormBileseniRepository;
+import com.example.flow.repository.FormRepository;
+import com.example.flow.repository.KullaniciRolRepository;
+import com.example.flow.repository.SurecAdimRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -10,7 +18,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 
 @Slf4j
@@ -26,40 +33,63 @@ public class TaskService {
 
     @Transactional
     public void createTasksForStep(Long surecId, Long adimId) {
-        // 1. Formu opsiyonel yapalım. Form yoksa hata fırlatmak yerine log basalım.
-        Optional<Form> formOpt = formRepository.findByAdimId(adimId);
-        if (formOpt.isEmpty()) {
-            log.warn("Adım ID {} için form bulunamadı, görev oluşturulamıyor!", adimId);
-            return;
-        }
 
-        Form form = formOpt.get();
-        List<FormBileseni> bilesenler = formBilesenRepository.findByForm_FormId(form.getFormId());
+        Form form = formRepository.findByAdimId(adimId)
+                .orElseThrow(() -> new RuntimeException("Adım için form bulunamadı. adimId=" + adimId));
+
+        List<FormBileseni> bilesenler =
+                formBilesenRepository.findByForm_FormId(form.getFormId());
+
         Set<Long> users = new HashSet<>();
 
-        // 2. Kullanıcıları topla
-        for (FormBileseni b : bilesenler) {
-            List<FormBileseniAtama> atamalar = atamaRepository.findByBilesenId(b.getBilesenId());
-            for (FormBileseniAtama a : atamalar) {
-                if ("USER".equalsIgnoreCase(a.getTip())) {
-                    users.add(a.getRefId());
-                } else if ("ROLE".equalsIgnoreCase(a.getTip())) {
-                    List<KullaniciRol> roller = kullaniciRolRepository.findByRolId(a.getRefId());
+        for (FormBileseni bilesen : bilesenler) {
+
+            // SADECE EDIT yetkisi olanları task sahibi yap
+            List<FormBileseniAtama> editAtamalar =
+                    atamaRepository.findByBilesenIdAndYetkiTipi(bilesen.getBilesenId(), "EDIT");
+
+            for (FormBileseniAtama atama : editAtamalar) {
+
+                if ("USER".equalsIgnoreCase(atama.getTip())) {
+                    if (atama.getRefId() != null) {
+                        users.add(atama.getRefId());
+                    }
+                } else if ("ROLE".equalsIgnoreCase(atama.getTip())) {
+                    List<KullaniciRol> roller =
+                            kullaniciRolRepository.findByRolId(atama.getRefId());
+
                     for (KullaniciRol kr : roller) {
-                        users.add(kr.getKullaniciId());
+                        if (kr.getKullaniciId() != null) {
+                            users.add(kr.getKullaniciId());
+                        }
                     }
                 }
             }
         }
 
-        // 3. Kullanıcı yoksa patlamak yerine uyarı verelim
         if (users.isEmpty()) {
-            log.error("Süreç ID {} - Adım ID {} için atanacak kullanıcı bulunamadı!", surecId, adimId);
-            return;
+            log.error("Süreç ID {} - Adım ID {} için EDIT yetkisine sahip atanacak kullanıcı bulunamadı!",
+                    surecId, adimId);
+            throw new RuntimeException("Bu adım için EDIT yetkisine sahip atanacak kullanıcı bulunamadı!");
         }
 
-        // 4. Taskları oluştur
+        // Aynı kullanıcıya aynı step için açık task varsa tekrar oluşturma
         for (Long uid : users) {
+            boolean zatenVar = surecAdimRepository
+                    .findBySurecIdAndAdimId(surecId, adimId)
+                    .stream()
+                    .anyMatch(t ->
+                            uid.equals(t.getAtananKullaniciId()) &&
+                                    !Boolean.TRUE.equals(t.getTamamlandiMi()) &&
+                                    !"REDDEDILDI".equalsIgnoreCase(t.getDurum())
+                    );
+
+            if (zatenVar) {
+                log.warn("Süreç ID {} - Adım ID {} - Kullanıcı ID {} için zaten açık task var, tekrar oluşturulmadı.",
+                        surecId, adimId, uid);
+                continue;
+            }
+
             SurecAdim task = new SurecAdim();
             task.setSurecId(surecId);
             task.setAdimId(adimId);
@@ -67,18 +97,21 @@ public class TaskService {
             task.setDurum("BEKLIYOR");
             task.setTamamlandiMi(false);
             task.setBaslamaTarihi(LocalDateTime.now());
+
             surecAdimRepository.save(task);
         }
-        log.info("Adım ID {} için {} adet görev başarıyla oluşturuldu.", adimId, users.size());
+
+        log.info("Adım ID {} için EDIT yetkisine göre görevler başarıyla oluşturuldu. Kullanıcı sayısı={}",
+                adimId, users.size());
     }
 
     public boolean isStepFullyCompleted(Long surecId, Long adimId) {
-        // Bu adım için oluşturulmuş tüm görevleri getir
+
         List<SurecAdim> tasks = surecAdimRepository.findBySurecIdAndAdimId(surecId, adimId);
 
-        if (tasks.isEmpty()) return true; // Hiç task yoksa tamamlanmış sayalım (veya hata yönetimine göre değişir)
+        if (tasks.isEmpty()) {
+            return true;
+        }
 
-        // Hepsinin durumunu kontrol et
-        return tasks.stream().allMatch(t -> "TAMAMLANDI".equals(t.getDurum()));
-    }
+        return tasks.stream().anyMatch(t -> "TAMAMLANDI".equalsIgnoreCase(t.getDurum()));    }
 }

@@ -18,31 +18,32 @@ public class FieldPermissionService {
 
     private boolean hasPermission(Long userId, Long bilesenId, String yetkiTipi) {
 
-        List<FormBileseniAtama> atamalar =
-                atamaRepository.findByBilesenId(bilesenId);
+        List<FormBileseniAtama> atamalar = atamaRepository.findByBilesenId(bilesenId);
 
-        if (atamalar.isEmpty()) return true;
+        // Hiç atama yoksa serbest
+        if (atamalar.isEmpty()) {
+            return true;
+        }
 
         for (FormBileseniAtama a : atamalar) {
 
             boolean yetkiUygun =
-                    yetkiTipi.equals(a.getYetkiTipi()) ||
-                            ("VIEW".equals(yetkiTipi) && "EDIT".equals(a.getYetkiTipi()));
+                    yetkiTipi.equalsIgnoreCase(a.getYetkiTipi()) ||
+                            ("VIEW".equalsIgnoreCase(yetkiTipi) && "EDIT".equalsIgnoreCase(a.getYetkiTipi()));
 
-            if (!yetkiUygun) continue;
+            if (!yetkiUygun) {
+                continue;
+            }
 
-            if ("USER".equals(a.getTip())
-                    && a.getRefId().equals(userId)) {
+            if ("USER".equalsIgnoreCase(a.getTip()) && a.getRefId().equals(userId)) {
                 return true;
             }
 
-            if ("ROLE".equals(a.getTip())) {
+            if ("ROLE".equalsIgnoreCase(a.getTip())) {
+                List<KullaniciRol> roller = kullaniciRolRepository.findByKullaniciId(userId);
 
-                List<KullaniciRol> roller =
-                        kullaniciRolRepository.findByRolId(a.getRefId());
-
-                for (KullaniciRol kr : roller) {
-                    if (kr.getKullaniciId().equals(userId)) {
+                for (KullaniciRol rol : roller) {
+                    if (rol.getRolId().equals(a.getRefId())) {
                         return true;
                     }
                 }
@@ -62,5 +63,13 @@ public class FieldPermissionService {
         if (!hasPermission(userId, bilesenId, "EDIT")) {
             throw new RuntimeException("Bu alanı düzenleme yetkin yok!");
         }
+    }
+
+    public boolean canView(Long userId, Long bilesenId) {
+        return hasPermission(userId, bilesenId, "VIEW");
+    }
+
+    public boolean canEdit(Long userId, Long bilesenId) {
+        return hasPermission(userId, bilesenId, "EDIT");
     }
 }

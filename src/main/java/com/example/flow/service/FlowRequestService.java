@@ -1,11 +1,17 @@
 package com.example.flow.service;
 
 import com.example.flow.dto.FlowStartResponse;
-import com.example.flow.entity.*;
-import com.example.flow.repository.*;
+import com.example.flow.entity.AkisSurec;
+import com.example.flow.entity.FlowBaslatmaIstek;
+import com.example.flow.repository.FlowBaslatmaIstekRepository;
+import com.example.flow.repository.SurecRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDateTime;
+import java.util.HashSet;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -21,15 +27,26 @@ public class FlowRequestService {
         FlowBaslatmaIstek istek = istekRepository.findById(requestId)
                 .orElseThrow(() -> new RuntimeException("İzin isteği bulunamadı"));
 
+        // Aynı isteğin tekrar çalışmasını engelle
+        if ("ONAY".equalsIgnoreCase(istek.getDurum())) {
+            return;
+        }
+
         istek.setDurum("ONAY");
         istekRepository.save(istek);
 
-        // 🔥 EN KRİTİK SATIR
+        // 🔥 HIBERNATE FIX (ÇOK KRİTİK)
+        Set<Long> assignedUserIdsCopy = null;
+        if (istek.getAssignedUserIds() != null) {
+            assignedUserIdsCopy = new HashSet<>(istek.getAssignedUserIds());
+        }
+
+        // 🔥 FLOW BAŞLAT
         FlowStartResponse response = flowStartService.startFlow(
                 istek.getAkisId(),
                 istek.getIsteyenKullaniciId(),
-                true,
-                istek.getAssignedUserIds()
+                true, // forceStart kalacak
+                assignedUserIdsCopy
         );
 
         // 🔥 PARENT BAĞLAMA
@@ -44,6 +61,7 @@ public class FlowRequestService {
 
             surecRepository.save(child);
 
+            // 🔥 PARENT DURUM GÜNCELLE
             surecRepository.findById(istek.getParentSurecId()).ifPresent(parent -> {
                 parent.setDurum("WAITING_EXTERNAL");
                 surecRepository.save(parent);
@@ -63,7 +81,7 @@ public class FlowRequestService {
         if (istek.getParentSurecId() != null) {
             surecRepository.findById(istek.getParentSurecId()).ifPresent(parent -> {
                 parent.setDurum("REDDEDILDI");
-                parent.setBitisTarihi(java.time.LocalDateTime.now());
+                parent.setBitisTarihi(LocalDateTime.now());
                 surecRepository.save(parent);
             });
         }

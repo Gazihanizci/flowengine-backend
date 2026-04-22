@@ -17,11 +17,18 @@ public class SurecHareket {
     private Long yapanKullaniciId;
 
     private String yapilanIslem;
-
+    @Column(columnDefinition = "TEXT")
+    private String aciklama;
     private LocalDateTime tarih;
 
     // GETTER SETTER
+    public String getAciklama() {
+        return aciklama;
+    }
 
+    public void setAciklama(String aciklama) {
+        this.aciklama = aciklama;
+    }
     public Long getHareketId() { return hareketId; }
     public void setHareketId(Long hareketId) { this.hareketId = hareketId; }
 

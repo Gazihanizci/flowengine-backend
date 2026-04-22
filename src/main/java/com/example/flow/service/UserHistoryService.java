@@ -91,6 +91,7 @@ public class UserHistoryService {
                             .aksiyon(aksiyon)
                             .formIcerik(formText.toString())
                             .tarih(h.getTarih().format(formatter))
+                            .aciklama(h.getAciklama()) // 💥 EKLENDİ
                             .build()
             );
         }

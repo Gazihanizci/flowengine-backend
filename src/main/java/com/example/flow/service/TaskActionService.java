@@ -28,7 +28,7 @@ public class TaskActionService {
     private final PdfReportService pdfReportService;
 
     @Transactional
-    public void handleAction(Long taskId, Long aksiyonId, Map<Long, String> formData) {
+    public void handleAction(Long taskId, Long aksiyonId, Map<Long, String> formData, String aciklama){
 
         if (aksiyonId == null || (aksiyonId != 1 && aksiyonId != 2 && aksiyonId != 3)) {
             throw new RuntimeException("Geçersiz aksiyon");
@@ -50,6 +50,11 @@ public class TaskActionService {
         // 🔹 RED
         if (aksiyonId == 3) {
 
+            // 🔥 açıklama zorunlu
+            if (aciklama == null || aciklama.isBlank()) {
+                throw new RuntimeException("İptal açıklaması zorunludur");
+            }
+
             currentTask.setDurum("REDDEDILDI");
             currentTask.setTamamlandiMi(true);
             currentTask.setBitisTarihi(LocalDateTime.now());
@@ -59,6 +64,18 @@ public class TaskActionService {
             surec.setDurum("REDDEDILDI");
             surec.setBitisTarihi(LocalDateTime.now());
             surecRepository.save(surec);
+
+            // 🔥 EN KRİTİK KISIM
+            SurecHareket hareket = new SurecHareket();
+            hareket.setSurecId(surecId);
+            hareket.setAdimId(adimId);
+            hareket.setAksiyonId(aksiyonId);
+            hareket.setYapanKullaniciId(userId);
+            hareket.setYapilanIslem("Reddedildi");
+            hareket.setAciklama(aciklama); // 💥 BURASI
+            hareket.setTarih(LocalDateTime.now());
+
+            surecHareketRepository.save(hareket);
 
             workflowEngineService.handleChildRejected(surec);
             return;

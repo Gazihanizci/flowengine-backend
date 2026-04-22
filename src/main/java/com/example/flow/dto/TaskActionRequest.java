@@ -10,6 +10,7 @@ import java.util.Map;
 public class TaskActionRequest {
 
     private Long aksiyonId;
+    private String aciklama;
 
     // key = bilesenId , value = girilen değer
     private Map<Long, String> formData;

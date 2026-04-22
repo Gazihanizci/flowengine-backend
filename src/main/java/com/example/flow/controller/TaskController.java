@@ -20,7 +20,8 @@ public class TaskController {
         taskActionService.handleAction(
                 taskId,
                 request.getAksiyonId(),
-                request.getFormData()
+                request.getFormData(),
+                request.getAciklama() // 🔥 EKLE
         );
     }
 }

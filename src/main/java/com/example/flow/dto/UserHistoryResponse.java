@@ -15,6 +15,6 @@ public class UserHistoryResponse {
 
     private String aksiyon;
     private String formIcerik;
-
+    private String aciklama;
     private String tarih;
 }

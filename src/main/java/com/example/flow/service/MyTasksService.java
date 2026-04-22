@@ -38,14 +38,14 @@ public class MyTasksService {
             tr.setSurecId(task.getSurecId());
             tr.setAdimId(task.getAdimId());
 
-            // 🔥 STEP
+            // STEP
             AkisAdim step = akisAdimRepository
                     .findById(task.getAdimId())
                     .orElseThrow();
 
             tr.setAdimAdi(step.getAdimAdi());
 
-            // 🔥 AKIŞ BİLGİSİ (FIX)
+            // AKIŞ
             AkisSurec surec = surecRepository
                     .findById(task.getSurecId())
                     .orElseThrow();
@@ -57,7 +57,7 @@ public class MyTasksService {
             tr.setAkisAdi(akis.getAkisAdi());
             tr.setAkisAciklama(akis.getAciklama());
 
-            // 🔥 FORM
+            // FORM
             Form form = formRepository
                     .findByAdimId(task.getAdimId())
                     .orElse(null);
@@ -66,20 +66,23 @@ public class MyTasksService {
 
             if (form != null) {
 
-                // 🔥 BİLEŞENLER
                 List<FormBileseni> bilesenler =
                         formBilesenRepository.findByForm_FormId(form.getFormId());
 
-                // 🔥 VERİLER
+                // 🔥 SADECE KENDİ VERİSİ
                 List<FormVeri> veriler =
-                        formVeriRepository.findBySurecId(task.getSurecId());
+                        formVeriRepository.findBySurecIdAndKaydedenKullaniciId(
+                                task.getSurecId(),
+                                userId
+                        );
 
                 Map<Long, String> veriMap = new HashMap<>();
+
                 for (FormVeri v : veriler) {
                     veriMap.put(v.getBilesenId(), v.getDeger());
                 }
 
-                // 🔥 OPTIONS
+                // OPTIONS
                 List<BilesenSecenegi> tumSecenekler =
                         bilesenSecenegiRepository.findAll();
 
@@ -98,18 +101,16 @@ public class MyTasksService {
                     optionMap.get(bilesenId).add(op);
                 }
 
-                // 🔥 FIELD LOOP
+                // 🔥 FIELD LOOP (FIX BURADA)
                 for (FormBileseni b : bilesenler) {
 
-                    // 👀 GÖRME YETKİSİ
+                    boolean canEdit = hasPermission(userId, b.getBilesenId(), "EDIT");
                     boolean canView = hasPermission(userId, b.getBilesenId(), "VIEW");
 
-                    if (!canView) {
-                        continue; // hiç gösterme
+                    // 🔥 KRİTİK FIX
+                    if (!canEdit && !canView) {
+                        continue;
                     }
-
-                    // ✍️ YAZMA YETKİSİ
-                    boolean canEdit = hasPermission(userId, b.getBilesenId(), "EDIT");
 
                     FieldResponse fr = new FieldResponse();
                     fr.setFieldId(b.getBilesenId());
@@ -136,13 +137,12 @@ public class MyTasksService {
         return responseList;
     }
 
-    // 🔥 PERMISSION CORE
+    // PERMISSION
     private boolean hasPermission(Long userId, Long bilesenId, String yetkiTipi) {
 
         List<FormBileseniAtama> atamalar =
                 atamaRepository.findByBilesenId(bilesenId);
 
-        // hiç atama yoksa herkes görebilir
         if (atamalar.isEmpty()) {
             return true;
         }
@@ -156,13 +156,11 @@ public class MyTasksService {
 
             if (!yetkiUygun) continue;
 
-            // USER
             if ("USER".equalsIgnoreCase(a.getTip())
                     && a.getRefId().equals(userId)) {
                 return true;
             }
 
-            // ROLE
             if ("ROLE".equalsIgnoreCase(a.getTip())) {
 
                 List<KullaniciRol> roller =

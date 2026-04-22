@@ -23,6 +23,7 @@ public class FormService {
     private final FormBileseniRepository formBilesenRepository;
     private final FormVeriRepository formVeriRepository;
     private final FieldPermissionService fieldPermissionService;
+
     @Transactional
     public void saveFormDraft(Long surecId, Long userId, Map<Long, String> formData) {
 
@@ -31,10 +32,16 @@ public class FormService {
         for (Map.Entry<Long, String> entry : formData.entrySet()) {
 
             fieldPermissionService.validateEdit(userId, entry.getKey());
+
             Optional<FormVeri> existing =
-                    formVeriRepository.findBySurecIdAndBilesenId(surecId, entry.getKey());
+                    formVeriRepository.findBySurecIdAndBilesenIdAndKaydedenKullaniciId(
+                            surecId,
+                            entry.getKey(),
+                            userId
+                    );
 
             FormVeri fv = existing.orElse(new FormVeri());
+
             fv.setSurecId(surecId);
             fv.setBilesenId(entry.getKey());
             fv.setDeger(entry.getValue());
@@ -44,12 +51,16 @@ public class FormService {
             formVeriRepository.save(fv);
         }
     }
+
     @Transactional
     public void validateAndSaveFormData(Long surecId, Long adimId, Long userId, Map<Long, String> formData) {
+
         Form form = formRepository.findByAdimId(adimId).orElse(null);
 
         if (form != null) {
-            List<FormBileseni> bilesenler = formBilesenRepository.findByForm_FormId(form.getFormId());
+            List<FormBileseni> bilesenler =
+                    formBilesenRepository.findByForm_FormId(form.getFormId());
+
             for (FormBileseni b : bilesenler) {
                 if (Boolean.TRUE.equals(b.getZorunlu())) {
                     if (formData == null || !formData.containsKey(b.getBilesenId())) {
@@ -61,10 +72,18 @@ public class FormService {
 
         if (formData != null) {
             for (Map.Entry<Long, String> entry : formData.entrySet()) {
+
                 fieldPermissionService.validateEdit(userId, entry.getKey());
-                Optional<FormVeri> existing = formVeriRepository.findBySurecIdAndBilesenId(surecId, entry.getKey());
+
+                Optional<FormVeri> existing =
+                        formVeriRepository.findBySurecIdAndBilesenIdAndKaydedenKullaniciId(
+                                surecId,
+                                entry.getKey(),
+                                userId
+                        );
 
                 FormVeri fv = existing.orElse(new FormVeri());
+
                 fv.setSurecId(surecId);
                 fv.setBilesenId(entry.getKey());
                 fv.setDeger(entry.getValue());
@@ -74,5 +93,10 @@ public class FormService {
                 formVeriRepository.save(fv);
             }
         }
+    }
+
+    // 🔥 SADECE KENDİ VERİSİNİ GETİR
+    public List<FormVeri> getUserFormData(Long surecId, Long userId) {
+        return formVeriRepository.findBySurecIdAndKaydedenKullaniciId(surecId, userId);
     }
 }

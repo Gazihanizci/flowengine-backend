@@ -38,4 +38,7 @@ public class AkisAdim {
 
     @Column(name = "cancel_behavior")
     private String cancelBehavior = "PROPAGATE";
+
+    @Column(name = "gerekli_onay_sayisi")
+    private Integer gerekliOnaySayisi = 1;
 }

@@ -30,4 +30,5 @@ public class StepSaveRequest {
     private Boolean resumeParentAfterSubFlow;
 
     private String cancelBehavior;
+    private Integer requiredApprovalCount;
 }

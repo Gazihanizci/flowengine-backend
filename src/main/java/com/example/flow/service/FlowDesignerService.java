@@ -59,6 +59,13 @@ public class FlowDesignerService {
             adim.setAdimAdi(stepRequest.getStepName());
             adim.setAdimSirasi(stepRequest.getStepOrder());
 
+            // 🔥 YENİ EKLENEN ALAN (ÇOKLU ONAY)
+            adim.setGerekliOnaySayisi(
+                    stepRequest.getRequiredApprovalCount() != null
+                            ? stepRequest.getRequiredApprovalCount()
+                            : 1
+            );
+
             adim.setExternalFlowEnabled(
                     Boolean.TRUE.equals(stepRequest.getExternalFlowEnabled())
             );

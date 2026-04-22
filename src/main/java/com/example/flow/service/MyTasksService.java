@@ -2,6 +2,7 @@ package com.example.flow.service;
 
 import com.example.flow.dto.*;
 import com.example.flow.entity.*;
+import com.example.flow.entity.Dosya;
 import com.example.flow.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -20,7 +21,7 @@ public class MyTasksService {
     private final FormBileseniAtamaRepository atamaRepository;
     private final KullaniciRolRepository kullaniciRolRepository;
     private final BilesenSecenegiRepository bilesenSecenegiRepository;
-
+    private final DosyaRepository dosyaRepository;
     private final SurecRepository surecRepository;
     private final AkisRepository akisRepository;
 
@@ -71,10 +72,7 @@ public class MyTasksService {
 
                 // 🔥 SADECE KENDİ VERİSİ
                 List<FormVeri> veriler =
-                        formVeriRepository.findBySurecIdAndKaydedenKullaniciId(
-                                task.getSurecId(),
-                                userId
-                        );
+                        formVeriRepository.findBySurecId(task.getSurecId());
 
                 Map<Long, String> veriMap = new HashMap<>();
 
@@ -116,8 +114,27 @@ public class MyTasksService {
                     fr.setFieldId(b.getBilesenId());
                     fr.setType(b.getBilesenTipi());
                     fr.setLabel(b.getLabel());
-                    fr.setValue(veriMap.get(b.getBilesenId()));
-                    fr.setEditable(canEdit);
+                    String rawValue = veriMap.get(b.getBilesenId());
+
+                    if ("FILE".equalsIgnoreCase(b.getBilesenTipi()) && rawValue != null) {
+
+                        try {
+                            Long fileId = Long.valueOf(rawValue);
+
+                            Dosya dosya = dosyaRepository.findById(fileId).orElse(null);
+
+                            if (dosya != null) {
+                                fr.setValue(dosya.getDosyaAdi()); // görünen isim
+                                fr.setFileId(dosya.getDosyaId()); // download için
+                            }
+
+                        } catch (Exception e) {
+                            fr.setValue(null);
+                        }
+
+                    } else {
+                        fr.setValue(rawValue);
+                    }                    fr.setEditable(canEdit);
 
                     fr.setOptions(
                             optionMap.getOrDefault(

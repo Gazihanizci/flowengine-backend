@@ -8,7 +8,7 @@ import java.util.List;
 @Getter
 @Setter
 public class FieldResponse {
-
+    private Long fileId;
     private Long fieldId;
     private String type;
     private String label;

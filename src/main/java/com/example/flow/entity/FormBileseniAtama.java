@@ -23,4 +23,5 @@ public class FormBileseniAtama {
 
     @Column(name = "ref_id")
     private Long refId;
+
 }

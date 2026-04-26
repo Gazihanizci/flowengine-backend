@@ -124,23 +124,14 @@ public class WorkflowEngineService {
         if (childSurec.getParentSurecId() == null) return;
 
         AkisSurec parent = surecRepository.findById(childSurec.getParentSurecId())
-                .orElseThrow();
+                .orElseThrow(() -> new RuntimeException("Parent bulunamadı"));
 
-        AkisAdim parentStep = akisAdimRepository.findById(childSurec.getParentAdimId())
-                .orElseThrow();
-
-        String davranis = parentStep.getCancelBehavior();
-
-        if (davranis == null || "Red Yansıması".equalsIgnoreCase(davranis)) {
-            parent.setDurum("REDDEDILDI");
-            parent.setBitisTarihi(LocalDateTime.now());
-        } else {
-            parent.setDurum("HARICI_BEKLIYOR");
-        }
+        // 🔥 ARTIK HER ZAMAN RED
+        parent.setDurum("REDDEDILDI");
+        parent.setBitisTarihi(LocalDateTime.now());
 
         surecRepository.save(parent);
     }
-
     private int sendNotifications(Long flowId, Long requestId, Long isteyenUserId) {
 
         List<FlowBaslatmaYetki> yetkiler = yetkiRepository.findByAkisId(flowId);

@@ -1,8 +1,6 @@
 package com.example.flow.controller;
 
-import com.example.flow.dto.FieldUpdateRequest;
-import com.example.flow.dto.FlowUpdateRequest;
-import com.example.flow.dto.StepUpdateRequest;
+import com.example.flow.dto.*;
 import com.example.flow.service.FlowEditService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -15,7 +13,9 @@ public class FlowEditController {
 
     private final FlowEditService service;
 
+    // =====================================================
     // 🔥 FLOW UPDATE
+    // =====================================================
     @PutMapping("/{flowId}")
     public ResponseEntity<?> updateFlow(
             @PathVariable Long flowId,
@@ -25,7 +25,9 @@ public class FlowEditController {
         return ResponseEntity.ok("Flow güncellendi");
     }
 
+    // =====================================================
     // 🔥 STEP UPDATE
+    // =====================================================
     @PutMapping("/step/{stepId}")
     public ResponseEntity<?> updateStep(
             @PathVariable Long stepId,
@@ -35,7 +37,9 @@ public class FlowEditController {
         return ResponseEntity.ok("Step güncellendi");
     }
 
+    // =====================================================
     // 🔥 FIELD UPDATE
+    // =====================================================
     @PutMapping("/field/{fieldId}")
     public ResponseEntity<?> updateField(
             @PathVariable Long fieldId,
@@ -43,5 +47,29 @@ public class FlowEditController {
     ) {
         service.updateField(fieldId, request);
         return ResponseEntity.ok("Field güncellendi");
+    }
+
+    // =====================================================
+    // 🔥 STEP CREATE
+    // =====================================================
+    @PostMapping("/step/{flowId}")
+    public ResponseEntity<?> createStep(
+            @PathVariable Long flowId,
+            @RequestBody StepUpdateRequest request
+    ) {
+        Long stepId = service.createStep(flowId, request);
+        return ResponseEntity.ok(stepId);
+    }
+
+    // =====================================================
+    // 🔥 FIELD CREATE
+    // =====================================================
+    @PostMapping("/field/{stepId}")
+    public ResponseEntity<?> createField(
+            @PathVariable Long stepId,
+            @RequestBody FieldCreateRequest request
+    ) {
+        Long fieldId = service.createField(stepId, request);
+        return ResponseEntity.ok(fieldId);
     }
 }

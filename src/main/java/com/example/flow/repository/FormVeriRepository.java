@@ -8,20 +8,17 @@ import java.util.Optional;
 
 public interface FormVeriRepository extends JpaRepository<FormVeri, Long> {
 
-    // 🔥 TÜM VERİ (admin/debug)
+    // 🔥 TÜM VERİ (debug)
     List<FormVeri> findBySurecId(Long surecId);
 
-    // 🔥 ESKİ (KULLANMA)
-    Optional<FormVeri> findBySurecIdAndBilesenId(Long surecId, Long bilesenId);
-
-    // 🔥 YENİ (KULLANILACAK)
+    // 🔥 FIELD + USER bazlı tek veri
     Optional<FormVeri> findBySurecIdAndBilesenIdAndKaydedenKullaniciId(
             Long surecId,
             Long bilesenId,
             Long userId
     );
 
-    // 🔥 KULLANICIYA ÖZEL OKUMA
+    // 🔥 USER bazlı tüm veriler
     List<FormVeri> findBySurecIdAndKaydedenKullaniciId(
             Long surecId,
             Long userId

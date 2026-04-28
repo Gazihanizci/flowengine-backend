@@ -6,10 +6,10 @@ import com.example.flow.repository.*;
 import com.example.flow.security.CurrentUser;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
 
 @Service
 @RequiredArgsConstructor
@@ -22,37 +22,27 @@ public class UserHistoryService {
     private final FormVeriRepository formVeriRepository;
     private final FormBileseniRepository bilesenRepository;
     private final CurrentUser currentUser;
+
+    @Transactional(readOnly = true)
     public List<UserHistoryResponse> getMyHistory() {
 
-        // 🔥 JWT'den kullanıcı al
-        Long userId = currentUser.id(); // ✅ DOĞRU KULLANIM
+        Long userId = currentUser.id();
 
         List<SurecHareket> hareketler =
                 hareketRepository.findByYapanKullaniciIdOrderByTarihDesc(userId);
 
-        List<UserHistoryResponse> list = new ArrayList<>();
+        List<UserHistoryResponse> result = new ArrayList<>();
 
         DateTimeFormatter formatter =
                 DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm");
 
         for (SurecHareket h : hareketler) {
 
-            // 🔥 SÜREÇ → AKIŞ
-            AkisSurec surec = surecRepository
-                    .findById(h.getSurecId())
-                    .orElse(null);
-
-            String akisAdi = "Bilinmiyor";
-
-            if (surec != null) {
-                Akis akis = akisRepository
-                        .findById(surec.getAkisId())
-                        .orElse(null);
-
-                if (akis != null) {
-                    akisAdi = akis.getAkisAdi();
-                }
-            }
+            // 🔥 AKIŞ ADI
+            String akisAdi = surecRepository.findById(h.getSurecId())
+                    .flatMap(s -> akisRepository.findById(s.getAkisId()))
+                    .map(Akis::getAkisAdi)
+                    .orElse("Bilinmiyor");
 
             // 🔥 ADIM ADI
             String adimAdi = akisAdimRepository
@@ -63,27 +53,42 @@ public class UserHistoryService {
             // 🔥 AKSİYON
             String aksiyon = getAksiyonAdi(h.getAksiyonId());
 
-            // 🔥 FORM VERİLERİ
+            // 🔥 USER + SÜREÇ VERİLERİ
             List<FormVeri> veriler =
-                    formVeriRepository.findBySurecId(h.getSurecId());
+                    formVeriRepository.findBySurecIdAndKaydedenKullaniciId(
+                            h.getSurecId(),
+                            h.getYapanKullaniciId()
+                    );
+
+            // 🔥 duplicate field temizleme
+            Map<Long, FormVeri> uniqueMap = new LinkedHashMap<>();
+            for (FormVeri fv : veriler) {
+                uniqueMap.put(fv.getBilesenId(), fv);
+            }
 
             StringBuilder formText = new StringBuilder();
 
-            for (FormVeri fv : veriler) {
+            for (FormVeri fv : uniqueMap.values()) {
 
                 FormBileseni b = bilesenRepository
                         .findById(fv.getBilesenId())
                         .orElse(null);
 
-                if (b != null) {
-                    formText.append(b.getLabel())
-                            .append(": ")
-                            .append(fv.getDeger())
-                            .append(" | ");
-                }
+                if (b == null) continue;
+
+                // 🔥 LAZY SAFE + ADIM FİLTRESİ
+                if (b.getForm() == null) continue;
+                if (b.getForm().getAdim() == null) continue;
+                if (b.getForm().getAdim().getAdimId() == null) continue;
+
+                if (!b.getForm().getAdim().getAdimId().equals(h.getAdimId())) continue;
+
+                formText.append(b.getLabel())
+                        .append(": ")
+                        .append(fv.getDeger());
             }
 
-            list.add(
+            result.add(
                     UserHistoryResponse.builder()
                             .surecId(h.getSurecId())
                             .akisAdi(akisAdi)
@@ -91,12 +96,12 @@ public class UserHistoryService {
                             .aksiyon(aksiyon)
                             .formIcerik(formText.toString())
                             .tarih(h.getTarih().format(formatter))
-                            .aciklama(h.getAciklama()) // 💥 EKLENDİ
+                            .aciklama(h.getAciklama())
                             .build()
             );
         }
 
-        return list;
+        return result;
     }
 
     private String getAksiyonAdi(Long aksiyonId) {

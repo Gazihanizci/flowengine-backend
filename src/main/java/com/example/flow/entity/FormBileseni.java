@@ -33,4 +33,5 @@ public class FormBileseni {
 
     @Column(name = "sira_no")
     private Integer siraNo;
+
 }

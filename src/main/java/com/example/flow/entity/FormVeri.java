@@ -35,4 +35,7 @@ public class FormVeri {
     // 🕒 ne zaman kaydedildi
     @Column(name = "kayit_tarihi")
     private LocalDateTime kayitTarihi;
+
+    @Column(name = "adim_id")
+    private Long adimId;
 }
